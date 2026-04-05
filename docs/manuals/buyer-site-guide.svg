@@ -1,0 +1,300 @@
+<svg width="1440" height="2240" viewBox="0 0 1440 2240" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="buyerGuideTitle buyerGuideDesc">
+  <title id="buyerGuideTitle">Jinmarket ??뚮맍瑗??????????????닿뎄??</title>
+  <desc id="buyerGuideDesc">??뚮맍瑗????????β돦裕??? ??⑤갭? 嶺뚢돦堉먪뵳? ??⑤㈇????怨뺤쭢, ?낅슣?뽪룇 ?筌먦끉逾??????????????뿉??筌먲퐘遊?????뉖? ????嶺뚯솘?</desc>
+  <defs>
+    <linearGradient id="heroGradientBuyer" x1="80" y1="80" x2="1360" y2="340" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#004544"/>
+      <stop offset="0.52" stop-color="#0C5B59"/>
+      <stop offset="1" stop-color="#8B3A47"/>
+    </linearGradient>
+    <linearGradient id="cardGradientBuyer" x1="0" y1="0" x2="0" y2="1">
+      <stop stop-color="#FFFDF8"/>
+      <stop offset="1" stop-color="#F8F1E6"/>
+    </linearGradient>
+    <linearGradient id="panelGradientBuyer" x1="0" y1="0" x2="1" y2="1">
+      <stop stop-color="#FFFFFF"/>
+      <stop offset="1" stop-color="#F5E8DA"/>
+    </linearGradient>
+    <filter id="shadowBuyer" x="-40" y="-40" width="160%" height="160%" color-interpolation-filters="sRGB">
+      <feDropShadow dx="0" dy="24" stdDeviation="24" flood-color="#002726" flood-opacity="0.12"/>
+    </filter>
+    <style>
+      .bg { fill: #F7F2E8; }
+      .card { fill: url(#cardGradientBuyer); stroke: rgba(0,69,68,0.12); stroke-width: 2; }
+      .screen { fill: url(#panelGradientBuyer); stroke: rgba(0,69,68,0.12); stroke-width: 2; }
+      .chip { fill: rgba(255,255,255,0.14); stroke: rgba(255,255,255,0.2); stroke-width: 1.5; }
+      .soft-chip { fill: #FCE8EE; stroke: #E5B7C0; stroke-width: 1.5; }
+      .note-chip { fill: #EEF6F5; stroke: #B7D6D4; stroke-width: 1.5; }
+      .title { font: 800 52px 'Pretendard','Noto Sans KR','Malgun Gothic',sans-serif; fill: #FFF9F2; }
+      .subtitle { font: 500 22px 'Pretendard','Noto Sans KR','Malgun Gothic',sans-serif; fill: rgba(255,249,242,0.88); }
+      .eyebrow { font: 700 18px 'Pretendard','Noto Sans KR','Malgun Gothic',sans-serif; letter-spacing: 0.18em; text-transform: uppercase; fill: #FFD200; }
+      .section-number { font: 800 30px 'Pretendard','Noto Sans KR','Malgun Gothic',sans-serif; fill: #F7F2E8; }
+      .section-kicker { font: 700 18px 'Pretendard','Noto Sans KR','Malgun Gothic',sans-serif; letter-spacing: 0.12em; text-transform: uppercase; fill: #004544; }
+      .section-title { font: 800 34px 'Pretendard','Noto Sans KR','Malgun Gothic',sans-serif; fill: #1A1A1A; }
+      .body { font: 500 22px 'Pretendard','Noto Sans KR','Malgun Gothic',sans-serif; fill: #43514F; }
+      .small { font: 500 18px 'Pretendard','Noto Sans KR','Malgun Gothic',sans-serif; fill: #43514F; }
+      .mini { font: 600 15px 'Pretendard','Noto Sans KR','Malgun Gothic',sans-serif; fill: #43514F; }
+      .ui-title { font: 800 20px 'Pretendard','Noto Sans KR','Malgun Gothic',sans-serif; fill: #1A1A1A; }
+      .ui-label { font: 700 15px 'Pretendard','Noto Sans KR','Malgun Gothic',sans-serif; fill: #004544; }
+      .ui-body { font: 500 15px 'Pretendard','Noto Sans KR','Malgun Gothic',sans-serif; fill: #43514F; }
+      .ui-small { font: 600 13px 'Pretendard','Noto Sans KR','Malgun Gothic',sans-serif; fill: #43514F; }
+      .button-primary { fill: #FFD200; }
+      .button-secondary { fill: #004544; }
+      .button-ghost { fill: #F9E4EA; stroke: #E4BEC7; stroke-width: 1.5; }
+      .badge-green { fill: rgba(0,69,68,0.12); }
+      .badge-pink { fill: rgba(244,167,185,0.24); }
+      .badge-yellow { fill: rgba(255,210,0,0.25); }
+      .browser-bar { fill: #F2ECE0; }
+      .step-dot { fill: #004544; }
+      .step-line { stroke: rgba(0,69,68,0.22); stroke-width: 4; }
+    </style>
+  </defs>
+
+  <rect class="bg" width="1440" height="2240"/>
+  <circle cx="1278" cy="188" r="150" fill="#FFD200" fill-opacity="0.13"/>
+  <circle cx="180" cy="2040" r="180" fill="#F4A7B9" fill-opacity="0.12"/>
+  <circle cx="1340" cy="2120" r="120" fill="#004544" fill-opacity="0.06"/>
+
+  <g filter="url(#shadowBuyer)">
+    <rect x="80" y="80" width="1280" height="264" rx="36" fill="url(#heroGradientBuyer)"/>
+  </g>
+  <text class="eyebrow" x="120" y="156">BUYER GUIDE</text>
+  <text class="title" x="120" y="218">Jinmarket ??뚮맍瑗??????????????닿뎄??</text>
+  <text class="subtitle" x="120" y="256">??⑤갭???嶺뚢돦堉?? ?꾩룆?餓???뚮맍瑗???삵깴???띠럾??熬곣뫁類?熬곣뫀沅???熬곣뫗????겶? ???낅슣?뽪룇濚밸Ŧ?? ?筌먦끉逾??濡ル츎 ?????????????뿉??筌먲퐘遊???곕????덈펲.</text>
+
+  <g>
+    <rect class="chip" x="120" y="286" width="214" height="42" rx="21"/>
+    <text class="mini" x="145" y="313" fill="#FFF9F2">??⑤갭? 嶺뚮ㅄ維뽨빳???濡?몠?곌랜??뵳</text>
+    <rect class="chip" x="350" y="286" width="200" height="42" rx="21"/>
+    <text class="mini" x="375" y="313" fill="#FFF9F2">嶺뚯빖留????뚮맍瑗?/ ???筌???濡ル빖</text>
+    <rect class="chip" x="566" y="286" width="214" height="42" rx="21"/>
+    <text class="mini" x="591" y="313" fill="#FFF9F2">?띠럾??熬곣뫁類?熬곣뫀沅???뚮맍瑗??熬곣뫗??</text>
+    <rect class="chip" x="796" y="286" width="186" height="42" rx="21"/>
+    <text class="mini" x="821" y="313" fill="#FFF9F2">?띠럾?????戮?닱 ?곌랜?亦끸넂臾?</text>
+  </g>
+
+  <g filter="url(#shadowBuyer)">
+    <rect class="card" x="80" y="396" width="1280" height="332" rx="30"/>
+  </g>
+  <line class="step-line" x1="138" y1="468" x2="138" y2="664"/>
+  <circle class="step-dot" cx="138" cy="446" r="24"/>
+  <text class="section-number" x="129" y="455">1</text>
+  <text class="section-kicker" x="188" y="448">LOGIN</text>
+  <text class="section-title" x="188" y="490">Threads ?熬곣뫗逾??븐뼚夷??꾩룆?餓??β돦裕??筌뤿굝由?뼨?</text>
+  <text class="body" x="188" y="528">??뚮맍瑗??????筌뤾쑬???類ｋ츎 Threads ?熬곣뫗逾??븐뼚異????놁졑??濡?듆 ?띠럾???猿딄땁 ?β돦裕??筌뤾쑴逾????뺢퀡?녻굢?嶺뚳퐣瑗???紐껊퉵??</text>
+
+  <g>
+    <rect class="screen" x="188" y="562" width="664" height="126" rx="24"/>
+    <rect class="browser-bar" x="188" y="562" width="664" height="30" rx="24"/>
+    <circle cx="214" cy="577" r="5" fill="#D89CA9"/>
+    <circle cx="230" cy="577" r="5" fill="#E7C35A"/>
+    <circle cx="246" cy="577" r="5" fill="#9DC4C1"/>
+    <text class="ui-small" x="276" y="582">/login</text>
+    <text class="ui-label" x="224" y="624">Threads ?熬곣뫗逾??</text>
+    <rect x="224" y="638" width="380" height="32" rx="16" fill="#FFFFFF" stroke="#D6CFC0"/>
+    <text class="ui-small" x="242" y="659">@ ??怨몃턄 ???놁졑 ?띠럾??? jinmarket</text>
+    <rect class="button-primary" x="624" y="632" width="188" height="42" rx="21"/>
+    <text class="ui-small" x="655" y="658" fill="#1A1A1A">?띠럾????β돦裕?????ｌ뫒?</text>
+  </g>
+
+  <g>
+    <rect class="note-chip" x="902" y="562" width="398" height="126" rx="24"/>
+    <text class="ui-title" x="932" y="604">?β돦裕????????</text>
+    <text class="ui-body" x="932" y="634">
+      <tspan x="932" dy="0">????濡?꺄 @?????吏?嶺뚳퐣瑗???紐껊퉵??</tspan>
+      <tspan x="932" dy="24">???β돦裕???????????곌랜?????븐뻼???怨쀬Ŧ ???????鍮??</tspan>
+      <tspan x="932" dy="24">???β돦裕????熬곣뫖?????⑤갭? 嶺뚮ㅄ維뽨빳?듭춹???濡?몠???????곕????덈펲.</tspan>
+    </text>
+  </g>
+
+  <g filter="url(#shadowBuyer)">
+    <rect class="card" x="80" y="764" width="1280" height="492" rx="30"/>
+  </g>
+  <line class="step-line" x1="138" y1="836" x2="138" y2="1174"/>
+  <circle class="step-dot" cx="138" cy="814" r="24"/>
+  <text class="section-number" x="129" y="823">2</text>
+  <text class="section-kicker" x="188" y="816">BROWSE</text>
+  <text class="section-title" x="188" y="858">???깆젷 嶺뚮∥?????븐뻼????뚮벣??륁뿉???⑤갭? 嶺뚢돦堉먪뵳</text>
+  <text class="body" x="188" y="896">??뚮맍瑗????? ??⑤８堉??貫?꾡빳?嶺뚮∥??? 繞벿살탳?????곗꽑???꾩룄?←몭? ???섎꿰춯??熬곥굤????????곸궠?獄? ?熬곣뫁????⑤갭? ?곸궠?獄?嶺뚮ㅄ維뽨빳??怨쀬Ŧ ??뚮봽???紐껊퉵??</text>
+
+  <g>
+    <rect class="screen" x="188" y="932" width="786" height="302" rx="24"/>
+    <rect class="browser-bar" x="188" y="932" width="786" height="30" rx="24"/>
+    <text class="ui-small" x="222" y="952">/</text>
+
+    <rect x="218" y="972" width="726" height="44" rx="18" fill="#004544"/>
+    <text class="ui-small" x="240" y="998" fill="#FFD200">Jinmarket Shop</text>
+    <text class="ui-small" x="356" y="998" fill="#FFF9F2">??⑤갭? 嶺뚮ㅄ維뽨빳</text>
+    <text class="ui-small" x="430" y="998" fill="#FFF9F2">???筌???濡ル빖 ??</text>
+    <text class="ui-small" x="520" y="998" fill="#FFF9F2">????뚮맍瑗?</text>
+    <text class="ui-small" x="590" y="998" fill="#FFF9F2">???瑗???????</text>
+    <text class="ui-small" x="698" y="998" fill="#FFF9F2">?β돦裕???</text>
+
+    <rect x="218" y="1028" width="452" height="126" rx="22" fill="#0C5B59"/>
+    <circle cx="618" cy="1050" r="56" fill="#FFD200" fill-opacity="0.16"/>
+    <circle cx="650" cy="1146" r="48" fill="#F4A7B9" fill-opacity="0.16"/>
+    <text class="ui-small" x="240" y="1050" fill="#FFD200">Market Flow</text>
+    <text class="ui-title" x="240" y="1078" fill="#FFF9F2">???????????좊닁?????伊??듭물???濡?몠?곌랜??</text>
+    <text class="ui-title" x="240" y="1102" fill="#FFF9F2">嶺뚯빖留????뚮맍瑗???삵깴???띠럾??熬곣뫁類?熬곣뫀沅???熬곣뫗??</text>
+    <text class="ui-body" x="240" y="1128" fill="#FFF9F2">??뚮맍瑗삥뤆?쎛 ?繹먮끍???濡?듆 ???瑗??? ??ｌ뫒鴉??怨댄뜢 ???뉖????熬곥굥??嶺뚯쉳?????⑤벡逾??紐껊퉵??</text>
+    <rect x="240" y="1138" width="132" height="22" rx="11" fill="#F9E4EA"/>
+    <text class="ui-small" x="263" y="1153">???筌???濡ル빖 ???꾩룆?餓λ뛼泥???</text>
+
+    <g>
+      <rect x="690" y="1028" width="118" height="54" rx="18" fill="#FFD200"/>
+      <text class="ui-small" x="706" y="1053">12</text>
+      <text class="ui-small" x="706" y="1070">?熬곣뫕????⑤갭?</text>
+      <rect x="820" y="1028" width="118" height="54" rx="18" fill="#FFFFFF" stroke="#D6CFC0"/>
+      <text class="ui-small" x="836" y="1053">5</text>
+      <text class="ui-small" x="836" y="1070">嶺뚯빖留????뚮맍瑗?</text>
+      <rect x="690" y="1090" width="118" height="54" rx="18" fill="#FFFFFF" stroke="#D6CFC0"/>
+      <text class="ui-small" x="706" y="1115">4</text>
+      <text class="ui-small" x="706" y="1132">?띠럾??熬곣뫁類?熬곣뫀沅?</text>
+      <rect x="820" y="1090" width="118" height="54" rx="18" fill="#FFFFFF" stroke="#D6CFC0"/>
+      <text class="ui-small" x="836" y="1115">6</text>
+      <text class="ui-small" x="836" y="1132">?띠럾?????戮?닱</text>
+      <rect x="690" y="1152" width="248" height="24" rx="12" fill="#FFFFFF" stroke="#D6CFC0"/>
+      <text class="ui-small" x="776" y="1167">???筌???濡ル빖</text>
+    </g>
+
+    <rect x="218" y="1168" width="726" height="24" rx="12" fill="#EEF6F5"/>
+    <text class="ui-small" x="238" y="1184">Catalog</text>
+    <text class="ui-small" x="310" y="1184">??⑤갭? 嶺뚮ㅄ維뽨빳</text>
+    <text class="ui-small" x="402" y="1184">?熬곣뫗???熬곣뫕????⑤갭????곌랜??????곕????덈펲</text>
+
+    <g>
+      <rect x="218" y="1202" width="228" height="20" rx="10" fill="#FFFFFF" stroke="#D6CFC0"/>
+      <rect class="badge-green" x="228" y="1206" width="42" height="12" rx="6"/>
+      <rect class="badge-pink" x="276" y="1206" width="50" height="12" rx="6"/>
+      <text class="ui-small" x="336" y="1216">??⑤㈇???곌랜??뵳</text>
+      <rect x="462" y="1202" width="228" height="20" rx="10" fill="#FFFFFF" stroke="#D6CFC0"/>
+      <rect class="badge-green" x="472" y="1206" width="42" height="12" rx="6"/>
+      <rect class="badge-pink" x="520" y="1206" width="62" height="12" rx="6"/>
+      <text class="ui-small" x="596" y="1216">??⑤㈇???곌랜??뵳</text>
+      <rect x="706" y="1202" width="238" height="20" rx="10" fill="#FFFFFF" stroke="#D6CFC0"/>
+      <rect class="badge-yellow" x="716" y="1206" width="42" height="12" rx="6"/>
+      <rect class="badge-pink" x="764" y="1206" width="58" height="12" rx="6"/>
+      <text class="ui-small" x="842" y="1216">??⑤㈇???곌랜??뵳</text>
+    </g>
+  </g>
+
+  <g>
+    <rect class="note-chip" x="1004" y="932" width="296" height="302" rx="24"/>
+    <text class="ui-title" x="1034" y="974">嶺뚮∥?????븐뻼??嶺뚳퐢?얍칰??????</text>
+    <text class="ui-body" x="1034" y="1004">
+      <tspan x="1034" dy="0">1. ??⑤８堉??貫?꾡빳??꾩룆?꾥굢??</tspan>
+      <tspan x="1034" dy="24">   ??⑤갭? 嶺뚮ㅄ維뽨빳? ???筌???濡ル빖 ?? ????뚮맍瑗??????</tspan>
+      <tspan x="1034" dy="32">2. ?띠럾???????꾩룄?←몭????類λ룴?????뉖? ??⑤챶??</tspan>
+      <tspan x="1034" dy="24">   ?β돦裕????????뉖? 嶺뚮∥???낆?????????잙??섋뜎????戮?뻣</tspan>
+      <tspan x="1034" dy="32">3. ???섎꿰춯???????곸궠?獄?쑚泥? ???깆젷 ?熬곥굤???뺢퀗??</tspan>
+      <tspan x="1034" dy="24">   ?熬곣뫕?? 嶺뚯빖留????뚮맍瑗? ?띠럾??熬곣뫁類?熬곣뫀沅?</tspan>
+      <tspan x="1034" dy="24">   ?띠럾?????戮?닱 ?띠럾??? ???筌???濡ル빖</tspan>
+      <tspan x="1034" dy="32">4. ?熬곣뫁????⑤갭? ?곸궠?獄??嶺뚮ㅄ維???2??</tspan>
+      <tspan x="1034" dy="24">   ????븐뻼???????3???餓??곌랜?????덈펲.</tspan>
+    </text>
+  </g>
+
+  <g filter="url(#shadowBuyer)">
+    <rect class="card" x="80" y="1292" width="1280" height="548" rx="30"/>
+  </g>
+  <line class="step-line" x1="138" y1="1364" x2="138" y2="1758"/>
+  <circle class="step-dot" cx="138" cy="1342" r="24"/>
+  <text class="section-number" x="129" y="1351">3</text>
+  <text class="section-kicker" x="188" y="1344">ACTION</text>
+  <text class="section-title" x="188" y="1386">??⑤갭? ??⑤㈇????????怨뺤쭢 ??ルㅎ臾???얄뵛</text>
+  <text class="body" x="188" y="1424">??⑤㈇????瑜곷턄嶺뚯솘??????????瑗??꾩렮維?????⑤벡逾??뺢퀗????????륁??얜Ŧ鍮?? ?β돦裕?????⑤객臾? ???瑗???リ턁筌????, ????⑤갭? ???????節띾쐾 ?筌먦끉逾???낅슣?섋땻??</text>
+
+  <g>
+    <rect class="screen" x="188" y="1460" width="432" height="334" rx="24"/>
+    <rect class="browser-bar" x="188" y="1460" width="432" height="30" rx="24"/>
+    <text class="ui-small" x="222" y="1480">/products/[id]</text>
+    <rect x="218" y="1514" width="160" height="18" rx="9" class="badge-green"/>
+    <rect x="388" y="1514" width="96" height="18" rx="9" class="badge-pink"/>
+    <rect x="494" y="1514" width="96" height="18" rx="9" class="badge-yellow"/>
+    <rect x="218" y="1550" width="372" height="120" rx="18" fill="#E9DFD0"/>
+    <text class="ui-title" x="218" y="1704">??⑤갭? ??類쏄콬 / ?띠럾???/ ???닿뎄 / ??⑤벡逾????뉖?</text>
+    <rect class="button-primary" x="218" y="1728" width="130" height="38" rx="19"/>
+    <text class="ui-small" x="249" y="1752">?꾩룆?餓???뚮맍瑗?</text>
+    <rect class="button-secondary" x="358" y="1728" width="170" height="38" rx="19"/>
+    <text class="ui-small" x="393" y="1752" fill="#FFF9F2">?띠럾??熬곣뫁類?熬곣뫀沅??熬곣뫗??</text>
+    <rect class="button-ghost" x="218" y="1774" width="160" height="38" rx="19"/>
+    <text class="ui-small" x="253" y="1798">?띠럾?????戮?닱???얄뵛</text>
+  </g>
+
+  <g>
+    <rect class="soft-chip" x="654" y="1460" width="206" height="160" rx="24"/>
+    <text class="ui-title" x="682" y="1500">A. 嶺뚯빖留????뚮맍瑗?</text>
+    <text class="ui-body" x="682" y="1532">
+      <tspan x="682" dy="0">???뺢퀗??? ?꾩룆?餓???뚮맍瑗?</tspan>
+      <tspan x="682" dy="24">?????筌???濡ル빖 ??⑤갭?????</tspan>
+      <tspan x="682" dy="24">  ?꾩룆?餓???ル―???怨쀬Ŧ ??戮?뻣</tspan>
+      <tspan x="682" dy="24">???熬곣뫁???????瑗??? ??⑤벡逾??紐껊퉵??</tspan>
+    </text>
+  </g>
+  <g>
+    <rect class="soft-chip" x="878" y="1460" width="206" height="160" rx="24"/>
+    <text class="ui-title" x="906" y="1500">B. ?띠럾??熬곣뫁類?熬곣뫀沅?</text>
+    <text class="ui-body" x="906" y="1532">
+      <tspan x="906" dy="0">???뺢퀗??? ?띠럾??熬곣뫁類?熬곣뫀沅뽩슖???뚮맍瑗??熬곣뫗??</tspan>
+      <tspan x="906" dy="24">???띠럾????꾩룆?????繞???濡る룎 ??ルㅎ臾????筌먦끉??</tspan>
+      <tspan x="906" dy="24">???獄쏅ħ遊?????뚮맍瑗??繹먮끍??</tspan>
+      <tspan x="906" dy="24">????쒕샍??귢껀??????븐뺙嶺??リ옇?????リ턁筌?</tspan>
+    </text>
+  </g>
+  <g>
+    <rect class="soft-chip" x="1102" y="1460" width="198" height="160" rx="24"/>
+    <text class="ui-title" x="1130" y="1500">C. ?띠럾?????戮?닱</text>
+    <text class="ui-body" x="1130" y="1532">
+      <tspan x="1130" dy="0">???뺢퀗??? ?띠럾?????戮?닱???얄뵛</tspan>
+      <tspan x="1130" dy="24">????戮?닱 ?띠럾??롪봇維??嶺뚮∥??????놁졑</tspan>
+      <tspan x="1130" dy="24">????戮?닱 ?곌랜?亦끸넂臾얏⑤벡夷???戮깅?</tspan>
+      <tspan x="1130" dy="24">?????瑗??? ??濡?뎅??濡?듆 ?낅슣?뽪룇 ??諛댁뎽</tspan>
+    </text>
+  </g>
+
+  <g>
+    <rect class="note-chip" x="654" y="1644" width="646" height="150" rx="24"/>
+    <text class="ui-title" x="684" y="1684">??⑤㈇????븐뻼????????????????</text>
+    <text class="ui-body" x="684" y="1716">
+      <tspan x="684" dy="0">???β돦裕??筌뤿굝由?춯?뼿 ???곷さ嶺???뚮맍瑗??뺢퀗????????β돦裕??????뺢퀗?????곌랜?????덈펲.</tspan>
+      <tspan x="684" dy="24">????? ?繹먮굞夷????⑤갭??????륁춺???뚮맍瑗?? ?띠럾?????戮?닱????????怨룸????덈펲.</tspan>
+      <tspan x="684" dy="24">?????? ???깆읉??琉?濾곌쑨?→뤃????瑗???リ턁筌????⑤갭??? ?뺢퀗?????????繹먮봿???紐껊퉵??</tspan>
+      <tspan x="684" dy="24">??嶺뚣끉裕???띠럾??熬곣뫁類?熬곣뫀沅??롪퍒???? ??? ?곌랜?亦??띠럾?????戮?닱????⑤㈇????븐뻼?????????곕뻣 ?筌먦끉逾???????곕????덈펲.</tspan>
+    </text>
+  </g>
+
+  <g filter="url(#shadowBuyer)">
+    <rect class="card" x="80" y="1876" width="1280" height="244" rx="30"/>
+  </g>
+  <line class="step-line" x1="138" y1="1948" x2="138" y2="2032"/>
+  <circle class="step-dot" cx="138" cy="1926" r="24"/>
+  <text class="section-number" x="129" y="1935">4</text>
+  <text class="section-kicker" x="188" y="1928">ORDERS</text>
+  <text class="section-title" x="188" y="1970">????뚮맍瑗?????嶺뚯쉳?듸쭛???⑤????筌먦끉逾???얄뵛</text>
+  <text class="body" x="188" y="2008">??⑤８堉?嶺뚮∥????????뚮맍瑗삣슖???????濡?듆 ??? ?繹먮끍????ろ뀣 ?낅슣?뽪룇???깅굵 ???뺢퀡?녻굢??筌먦끉逾???????곕????덈펲.</text>
+
+  <g>
+    <rect class="screen" x="188" y="2036" width="640" height="54" rx="18"/>
+    <rect class="badge-pink" x="208" y="2052" width="88" height="20" rx="10"/>
+    <text class="ui-small" x="225" y="2067">嶺뚯빖留????뚮맍瑗?</text>
+    <text class="ui-small" x="312" y="2067">??⑤갭?嶺?/ ?怨쀫츎???/ ??⑤객臾?</text>
+    <rect class="screen" x="188" y="2098" width="640" height="54" rx="18"/>
+    <rect class="badge-pink" x="208" y="2114" width="116" height="20" rx="10"/>
+    <text class="ui-small" x="222" y="2129">?띠럾??熬곣뫁類?熬곣뫀沅??獄쏅ħ遊?</text>
+    <text class="ui-small" x="340" y="2129">??⑤갭?嶺?/ ?怨쀫츎???/ ??⑤객臾?</text>
+  </g>
+
+  <g>
+    <rect class="note-chip" x="866" y="2036" width="434" height="116" rx="24"/>
+    <text class="ui-title" x="896" y="2078">?낅슣?뽪룇 嶺뚮ㅄ維뽨빳??????곌랜???????</text>
+    <text class="ui-body" x="896" y="2108">
+      <tspan x="896" dy="0">????뚮맍瑗??롪퍔?δ빳? 嶺뚯빖留????뚮맍瑗?/ ?띠럾??熬곣뫁類?熬곣뫀沅??獄쏅ħ遊?/ ?띠럾?????戮?닱 ??濡?뎅</tspan>
+      <tspan x="896" dy="24">????⑤객臾? ???瑗??? ??⑤벡逾???겶???猿롫땴 ???뉖???嶺뚯쉳?듸쭛??濡ル츎 ???????筌먦끉逾?</tspan>
+    </text>
+  </g>
+
+  <g>
+    <rect x="80" y="2150" width="1280" height="50" rx="25" fill="#004544"/>
+    <text class="mini" x="116" y="2182" fill="#FFF9F2">???堉??リ옇?ｅ젆???얄뵛: ?β돦裕????熬곣뫖???嶺뚮ㅄ維뽨빳?듭춹??곌랜??뵳??띠럾???鸚????깆읉 ??⑤갭??? ??ル―???釉띾쐝? 鸚???뚮맍瑗??繹먮끍???????瑗??? 嶺뚯쉳?????⑤벡逾?鸚????筌???濡ル빖?????됰뎄????????怨쀬Ŧ 嶺뚯쉳?듸쭛</text>
+  </g>
+</svg>

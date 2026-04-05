@@ -1,0 +1,73 @@
+export const metadata = {
+  title: "개인정보처리방침 | 진의 벼룩시장",
+  description: "진의 벼룩시장의 개인정보 수집 및 이용 안내",
+};
+
+export default function PrivacyPage() {
+  return (
+    <section className="panel legalPage">
+      <p className="eyebrow">Privacy Policy</p>
+      <h1>개인정보처리방침</h1>
+      <p className="legalMeta">최종 업데이트: 2026년 3월 29일</p>
+
+      <p>
+        진의 벼룩시장(이하 &quot;서비스&quot;)은 로그인, 상품 등록, 구매 처리,
+        주문 관리에 필요한 범위에서만 개인정보를 수집하고 이용합니다.
+      </p>
+
+      <h2>1. 수집하는 정보</h2>
+      <ul>
+        <li>
+          Threads 로그인 시 제공되는 식별 정보: Threads 사용자 ID, username,
+          표시명, 프로필 이미지
+        </li>
+        <li>
+          서비스 이용 과정에서 생성되는 정보: 등록 상품 정보, 주문 정보, 가격
+          제안 정보, 가위바위보 도전 기록
+        </li>
+        <li>판매자가 직접 입력하는 정보: 상품 설명, 이미지, 가격, 판매 방식</li>
+      </ul>
+
+      <h2>2. 이용 목적</h2>
+      <ul>
+        <li>사용자 본인 식별 및 로그인 세션 유지</li>
+        <li>상품 등록, 수정, 삭제와 구매 처리</li>
+        <li>판매자와 구매자 간 거래 상태 확인</li>
+        <li>무료 나눔, 가격 제안, 가위바위보 구매 기능 제공</li>
+      </ul>
+
+      <h2>3. 보관 위치와 처리 서비스</h2>
+      <ul>
+        <li>서비스 데이터는 Supabase(PostgreSQL)에 저장됩니다.</li>
+        <li>상품 이미지는 Cloudinary에 저장됩니다.</li>
+        <li>Threads 로그인은 Meta의 Threads OAuth를 사용합니다.</li>
+      </ul>
+
+      <h2>4. 보관 기간</h2>
+      <p>
+        계정 정보와 거래 기록은 서비스 운영과 분쟁 대응을 위해 필요한 동안
+        보관할 수 있으며, 삭제 요청이 접수되면 관련 법령과 운영상 필요 범위를
+        검토한 뒤 처리합니다.
+      </p>
+
+      <h2>5. 제3자 제공</h2>
+      <p>
+        서비스는 이용자의 개인정보를 판매하지 않습니다. 다만 로그인과 이미지
+        저장을 위해 Meta Threads, Supabase, Cloudinary 같은 외부 서비스가 사용될
+        수 있습니다.
+      </p>
+
+      <h2>6. 이용자 권리</h2>
+      <ul>
+        <li>본인 정보 열람, 수정, 삭제를 요청할 수 있습니다.</li>
+        <li>로그인 연동 해제 및 데이터 삭제를 요청할 수 있습니다.</li>
+        <li>삭제 절차는 데이터 삭제 안내 페이지를 따릅니다.</li>
+      </ul>
+
+      <h2>7. 문의</h2>
+      <p>
+        운영자 문의 이메일: <strong>hanj8980@naver.com</strong>
+      </p>
+    </section>
+  );
+}
