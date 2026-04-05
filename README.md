@@ -35,8 +35,8 @@ Threads 계정 기반 로그인, 판매자 어드민, 구매자 쇼핑 화면을
 - 배포 환경
   - `NEXT_PUBLIC_API_BASE_URL=https://api.example.com`
   - `API_PROXY_TARGET=https://api.example.com`
-  - `NEXT_PUBLIC_SHOP_APP_URL=https://shop.example.com`
-  - `NEXT_PUBLIC_ADMIN_APP_URL=https://admin.example.com`
+  - `NEXT_PUBLIC_SHOP_APP_URL=https://web.jinmarket.shop`
+  - `NEXT_PUBLIC_ADMIN_APP_URL=https://management.jinmarket.shop`
   - `THREADS_REDIRECT_URI=https://api.example.com/auth/callback`
 
 ## Local HTTPS

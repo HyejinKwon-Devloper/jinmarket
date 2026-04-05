@@ -36,8 +36,8 @@ const defaultAllowedOrigins = Array.from(
       [
         process.env.NEXT_PUBLIC_SHOP_APP_URL,
         process.env.NEXT_PUBLIC_ADMIN_APP_URL,
-        "https://jinmarket-web.vercel.app",
-        "https://jinmarket-admin.vercel.app"
+        "https://web.jinmarket.shop",
+        "https://management.jinmarket.shop"
       ]
         .map((value) => normalizeOrigin(value))
         .filter((value): value is string => Boolean(value))

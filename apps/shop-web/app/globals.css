@@ -28,9 +28,21 @@ body {
   padding: 0;
   min-height: 100%;
   background:
-    radial-gradient(circle at top left, rgba(244, 167, 185, 0.3), transparent 28%),
-    radial-gradient(circle at top right, rgba(255, 210, 0, 0.22), transparent 24%),
-    linear-gradient(180deg, rgba(247, 242, 232, 0.84) 0%, rgba(247, 242, 232, 0.92) 100%),
+    radial-gradient(
+      circle at top left,
+      rgba(244, 167, 185, 0.3),
+      transparent 28%
+    ),
+    radial-gradient(
+      circle at top right,
+      rgba(255, 210, 0, 0.22),
+      transparent 24%
+    ),
+    linear-gradient(
+      180deg,
+      rgba(247, 242, 232, 0.84) 0%,
+      rgba(247, 242, 232, 0.92) 100%
+    ),
     url("/background.webp") center center / cover fixed no-repeat;
   color: var(--text);
   font-family: "Pretendard", "Noto Sans KR", sans-serif;
@@ -59,6 +71,7 @@ textarea {
 }
 
 button {
+  text-align: center;
   transition:
     transform 0.18s ease,
     box-shadow 0.18s ease,
@@ -111,7 +124,12 @@ button:disabled {
 
 .topbar::after {
   background:
-    linear-gradient(135deg, rgba(0, 69, 68, 0.94) 0%, rgba(0, 69, 68, 0.86) 40%, rgba(26, 26, 26, 0.56) 100%),
+    linear-gradient(
+      135deg,
+      rgba(0, 69, 68, 0.94) 0%,
+      rgba(0, 69, 68, 0.86) 40%,
+      rgba(26, 26, 26, 0.56) 100%
+    ),
     linear-gradient(180deg, rgba(0, 0, 0, 0.08) 0%, rgba(0, 0, 0, 0.18) 100%);
 }
 
@@ -310,7 +328,12 @@ button:disabled {
 
 .heroBanner::after {
   background:
-    linear-gradient(135deg, rgba(0, 69, 68, 0.9) 0%, rgba(0, 69, 68, 0.7) 42%, rgba(178, 34, 34, 0.54) 100%),
+    linear-gradient(
+      135deg,
+      rgba(0, 69, 68, 0.9) 0%,
+      rgba(0, 69, 68, 0.7) 42%,
+      rgba(178, 34, 34, 0.54) 100%
+    ),
     linear-gradient(180deg, rgba(0, 0, 0, 0.08) 0%, rgba(0, 0, 0, 0.28) 100%);
 }
 
@@ -333,7 +356,11 @@ button:disabled {
 }
 
 .heroBanner .heroStat {
-  background: linear-gradient(180deg, rgba(247, 242, 232, 0.2), rgba(244, 167, 185, 0.12));
+  background: linear-gradient(
+    180deg,
+    rgba(247, 242, 232, 0.2),
+    rgba(244, 167, 185, 0.12)
+  );
   border-color: rgba(255, 255, 255, 0.2);
   backdrop-filter: blur(8px);
 }
@@ -375,7 +402,11 @@ button:disabled {
 .heroStat {
   padding: 16px;
   border-radius: 18px;
-  background: linear-gradient(180deg, rgba(255, 255, 255, 0.7), rgba(244, 167, 185, 0.18));
+  background: linear-gradient(
+    180deg,
+    rgba(255, 255, 255, 0.7),
+    rgba(244, 167, 185, 0.18)
+  );
   border: 1px solid rgba(0, 69, 68, 0.12);
 }
 
@@ -388,7 +419,11 @@ button:disabled {
 
 .heroStatButton.active {
   border-color: rgba(255, 210, 0, 0.88);
-  background: linear-gradient(180deg, rgba(255, 210, 0, 0.32), rgba(244, 167, 185, 0.18));
+  background: linear-gradient(
+    180deg,
+    rgba(255, 210, 0, 0.32),
+    rgba(244, 167, 185, 0.18)
+  );
   box-shadow: 0 16px 28px rgba(0, 31, 31, 0.18);
 }
 
@@ -543,7 +578,11 @@ button:disabled {
 }
 
 .primaryButton {
-  background: linear-gradient(180deg, var(--accent) 0%, var(--accent-deep) 100%);
+  background: linear-gradient(
+    180deg,
+    var(--accent) 0%,
+    var(--accent-deep) 100%
+  );
   color: var(--text);
   box-shadow: 0 12px 22px rgba(255, 210, 0, 0.28);
 }
@@ -740,7 +779,11 @@ button:disabled {
   padding: 22px;
   border-radius: 28px;
   background:
-    linear-gradient(180deg, rgba(255, 250, 242, 0.98), rgba(247, 242, 232, 0.97)),
+    linear-gradient(
+      180deg,
+      rgba(255, 250, 242, 0.98),
+      rgba(247, 242, 232, 0.97)
+    ),
     rgba(247, 242, 232, 0.97);
   border: 1px solid rgba(0, 69, 68, 0.12);
   box-shadow: 0 30px 80px rgba(0, 25, 25, 0.28);
@@ -777,7 +820,11 @@ button:disabled {
   padding: 18px;
   border-radius: 24px;
   background:
-    radial-gradient(circle at top right, rgba(255, 210, 0, 0.26), transparent 30%),
+    radial-gradient(
+      circle at top right,
+      rgba(255, 210, 0, 0.26),
+      transparent 30%
+    ),
     linear-gradient(135deg, rgba(0, 69, 68, 0.12), rgba(244, 167, 185, 0.14));
 }
 
@@ -849,7 +896,11 @@ button:disabled {
 
 .rpsChoiceCard.selected {
   border-color: rgba(255, 210, 0, 0.92);
-  background: linear-gradient(180deg, rgba(255, 210, 0, 0.28), rgba(244, 167, 185, 0.16));
+  background: linear-gradient(
+    180deg,
+    rgba(255, 210, 0, 0.28),
+    rgba(244, 167, 185, 0.16)
+  );
   box-shadow: 0 14px 28px rgba(0, 31, 31, 0.16);
 }
 
@@ -915,12 +966,20 @@ button:disabled {
 }
 
 .rpsResultBanner.win {
-  background: linear-gradient(180deg, rgba(255, 210, 0, 0.2), rgba(244, 167, 185, 0.14));
+  background: linear-gradient(
+    180deg,
+    rgba(255, 210, 0, 0.2),
+    rgba(244, 167, 185, 0.14)
+  );
 }
 
 .rpsResultBanner.lose,
 .rpsResultBanner.draw {
-  background: linear-gradient(180deg, rgba(255, 255, 255, 0.72), rgba(244, 167, 185, 0.12));
+  background: linear-gradient(
+    180deg,
+    rgba(255, 255, 255, 0.72),
+    rgba(244, 167, 185, 0.12)
+  );
 }
 
 .rpsResultBanner strong {

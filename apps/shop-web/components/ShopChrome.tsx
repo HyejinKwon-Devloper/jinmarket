@@ -8,7 +8,7 @@ import { fetchCurrentUser, requestJson } from "../lib/api";
 
 const defaultAdminAppUrl =
   process.env.NODE_ENV === "production"
-    ? "https://jinmarket-admin.vercel.app"
+    ? "https://management.jinmarket.shop"
     : "https://jinmarket.test:3001";
 const adminAppUrl = process.env.NEXT_PUBLIC_ADMIN_APP_URL ?? defaultAdminAppUrl;
 
