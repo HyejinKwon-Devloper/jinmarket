@@ -8,9 +8,7 @@ import type {
   UploadSignatureResponse,
 } from "@jinmarket/shared";
 
-const defaultApiBaseUrl = (
-  process.env.NEXT_PUBLIC_API_BASE_URL ?? "/api"
-).replace(/\/+$/, "");
+const defaultApiBaseUrl = "/api";
 
 export const apiBaseUrl = defaultApiBaseUrl;
 

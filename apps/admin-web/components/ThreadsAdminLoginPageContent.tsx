@@ -18,7 +18,7 @@ type VerificationResponse = {
   message: string;
 };
 
-export function ThreadsAdminLoginPageContent() {
+export function AdminLoginPageContent() {
   const [targetUrl, setTargetUrl] = useState("/products");
   const [loginId, setLoginId] = useState("");
   const [password, setPassword] = useState("");
@@ -629,3 +629,5 @@ export function ThreadsAdminLoginPageContent() {
     </section>
   );
 }
+
+export const ThreadsAdminLoginPageContent = AdminLoginPageContent;

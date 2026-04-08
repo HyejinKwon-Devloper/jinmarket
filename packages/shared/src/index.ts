@@ -223,9 +223,34 @@ export function resolveSafeReturnTo(rawTarget: string | null, fallbackPath: stri
   }
 }
 
+export function buildLoginHref(targetUrl: string, appBaseUrl = "/") {
+  const normalizedBaseUrl = appBaseUrl.replace(/\/+$/, "");
+
+  try {
+    const resolvedBaseUrl =
+      !normalizedBaseUrl || normalizedBaseUrl === "/"
+        ? new URL("/", "https://jinmarket.invalid")
+        : new URL(normalizedBaseUrl, "https://jinmarket.invalid");
+    const loginUrl = new URL("/login", resolvedBaseUrl);
+    loginUrl.searchParams.set("return_to", targetUrl);
+
+    return loginUrl.origin === "https://jinmarket.invalid"
+      ? `${loginUrl.pathname}${loginUrl.search}`
+      : loginUrl.toString();
+  } catch {
+    const fallbackBase =
+      !normalizedBaseUrl || normalizedBaseUrl === "/api"
+        ? ""
+        : normalizedBaseUrl.endsWith("/api")
+          ? normalizedBaseUrl.slice(0, -4)
+          : normalizedBaseUrl;
+
+    return `${fallbackBase}/login?return_to=${encodeURIComponent(targetUrl)}`;
+  }
+}
+
 export function buildThreadsLoginHref(targetUrl: string, apiBaseUrl = "/api") {
-  const normalizedBaseUrl = apiBaseUrl.replace(/\/+$/, "");
-  return `${normalizedBaseUrl}/auth/threads/login?return_to=${encodeURIComponent(targetUrl)}`;
+  return buildLoginHref(targetUrl, apiBaseUrl);
 }
 
 export interface GamePlayResult {

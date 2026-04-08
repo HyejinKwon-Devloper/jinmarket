@@ -244,6 +244,60 @@ function asyncHandler(
   };
 }
 
+const adminAppOrigin = process.env.NEXT_PUBLIC_ADMIN_APP_URL ?? "https://management.jinmarket.shop";
+const shopAppOrigin = process.env.NEXT_PUBLIC_SHOP_APP_URL ?? "https://web.jinmarket.shop";
+const deprecatedThreadsLoginMessage = "Threads 로그인은 종료되었습니다. 일반 로그인 또는 계정 전환을 이용해 주세요.";
+
+function normalizeOrigin(value?: string | null) {
+  if (!value) {
+    return null;
+  }
+
+  try {
+    return new URL(value).origin;
+  } catch {
+    return null;
+  }
+}
+
+const knownAppOrigins = [adminAppOrigin, shopAppOrigin, "https://management.jinmarket.shop", "https://web.jinmarket.shop"]
+  .map((value) => normalizeOrigin(value))
+  .filter((value, index, array): value is string => Boolean(value) && array.indexOf(value) === index);
+
+function getFallbackReturnPath(origin: string) {
+  return origin === normalizeOrigin(adminAppOrigin) || origin === "https://management.jinmarket.shop" ? "/products" : "/";
+}
+
+function resolveDeprecatedThreadsTarget(request: Request) {
+  const rawReturnTo = typeof request.query.return_to === "string" ? request.query.return_to : null;
+  const resolvedOrigin =
+    [rawReturnTo, request.get("origin"), request.get("referer")]
+      .map((value) => normalizeOrigin(value))
+      .find((value) => typeof value === "string" && knownAppOrigins.includes(value)) ??
+    knownAppOrigins[0] ??
+    "https://management.jinmarket.shop";
+  const fallbackReturnTo = new URL(getFallbackReturnPath(resolvedOrigin), resolvedOrigin);
+  let resolvedReturnTo = fallbackReturnTo.toString();
+
+  if (rawReturnTo) {
+    try {
+      const parsedReturnTo = new URL(rawReturnTo, resolvedOrigin);
+
+      if (parsedReturnTo.origin === resolvedOrigin) {
+        resolvedReturnTo = parsedReturnTo.toString();
+      }
+    } catch {
+      resolvedReturnTo = fallbackReturnTo.toString();
+    }
+  }
+
+  const loginUrl = new URL("/login", resolvedOrigin);
+  loginUrl.searchParams.set("return_to", resolvedReturnTo);
+  loginUrl.searchParams.set("error", deprecatedThreadsLoginMessage);
+
+  return loginUrl.toString();
+}
+
 export function createApp() {
   const app = express();
 
@@ -269,12 +323,12 @@ export function createApp() {
     response.json({ ok: true });
   });
 
-  app.get("/auth/threads/login", () => {
-    throw new AppError("Threads OAuth 로그인은 더 이상 지원하지 않습니다.", 410);
+  app.get("/auth/threads/login", (request, response) => {
+    response.redirect(302, resolveDeprecatedThreadsTarget(request));
   });
 
-  app.get("/auth/callback", () => {
-    throw new AppError("Threads OAuth 로그인은 더 이상 지원하지 않습니다.", 410);
+  app.get("/auth/callback", (request, response) => {
+    response.redirect(302, resolveDeprecatedThreadsTarget(request));
   });
 
   app.post(

@@ -9,7 +9,7 @@ type AuthResponse = {
   message: string;
 };
 
-export function ThreadsShopLoginPageContent() {
+export function ShopLoginPageContent() {
   const [targetUrl, setTargetUrl] = useState("/");
   const [loginId, setLoginId] = useState("");
   const [password, setPassword] = useState("");
@@ -364,3 +364,5 @@ export function ThreadsShopLoginPageContent() {
     </section>
   );
 }
+
+export const ThreadsShopLoginPageContent = ShopLoginPageContent;

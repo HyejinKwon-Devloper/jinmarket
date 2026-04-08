@@ -1,3 +1,3 @@
 ﻿"use client";
 
-export { ThreadsAdminLoginPageContent as default } from "../../components/ThreadsAdminLoginPageContent";
+export { AdminLoginPageContent as default } from "../../components/ThreadsAdminLoginPageContent";
