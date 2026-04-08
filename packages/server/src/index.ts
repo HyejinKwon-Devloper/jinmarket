@@ -280,7 +280,7 @@ export function createApp() {
   app.post(
     "/auth/login",
     asyncHandler(async (request, response) => {
-      const parsed = loginSchema.parse(request.body);
+      const parsed = loginSchema.parse(request.body) as Parameters<typeof loginWithPassword>[0];
       const session = await loginWithPassword(parsed);
       setSessionCookie(response, session.sessionToken, session.expiresAt);
       response.json({
@@ -293,7 +293,7 @@ export function createApp() {
   app.post(
     "/auth/register",
     asyncHandler(async (request, response) => {
-      const parsed = buyerSignupSchema.parse(request.body);
+      const parsed = buyerSignupSchema.parse(request.body) as Parameters<typeof registerBuyerAccount>[0];
       const session = await registerBuyerAccount(parsed);
       setSessionCookie(response, session.sessionToken, session.expiresAt);
       response.status(201).json({
@@ -306,7 +306,9 @@ export function createApp() {
   app.post(
     "/auth/register/request-code",
     asyncHandler(async (request, response) => {
-      const parsed = signupRequestSchema.parse(request.body);
+      const parsed = signupRequestSchema.parse(request.body) as Parameters<
+        typeof requestSignupVerification
+      >[0];
       await requestSignupVerification(parsed);
       response.status(201).json({
         ok: true,
@@ -318,7 +320,7 @@ export function createApp() {
   app.post(
     "/auth/register/verify",
     asyncHandler(async (request, response) => {
-      const parsed = signupVerifySchema.parse(request.body);
+      const parsed = signupVerifySchema.parse(request.body) as Parameters<typeof verifySignupCode>[0];
       const session = await verifySignupCode(parsed);
       setSessionCookie(response, session.sessionToken, session.expiresAt);
       response.status(201).json({
@@ -332,7 +334,9 @@ export function createApp() {
     "/auth/seller-email/request-code",
     asyncHandler(async (request, response) => {
       const user = requireAuth(request);
-      const parsed = sellerEmailRequestSchema.parse(request.body);
+      const parsed = sellerEmailRequestSchema.parse(request.body) as Parameters<
+        typeof requestSellerEmailVerification
+      >[1];
       await requestSellerEmailVerification(user.id, parsed);
       response.status(201).json({
         ok: true,
@@ -345,7 +349,9 @@ export function createApp() {
     "/auth/seller-email/verify",
     asyncHandler(async (request, response) => {
       const user = requireAuth(request);
-      const parsed = sellerEmailVerifySchema.parse(request.body);
+      const parsed = sellerEmailVerifySchema.parse(request.body) as Parameters<
+        typeof verifySellerEmailVerification
+      >[1];
       const verifiedUser = await verifySellerEmailVerification(user.id, parsed);
       response.status(201).json({
         user: verifiedUser,
@@ -371,7 +377,9 @@ export function createApp() {
   app.post(
     "/auth/password/reset/request-code",
     asyncHandler(async (request, response) => {
-      const parsed = passwordResetRequestSchema.parse(request.body);
+      const parsed = passwordResetRequestSchema.parse(request.body) as Parameters<
+        typeof requestPasswordReset
+      >[0];
       await requestPasswordReset(parsed);
       response.status(201).json({
         ok: true,
@@ -383,7 +391,9 @@ export function createApp() {
   app.post(
     "/auth/password/reset/verify",
     asyncHandler(async (request, response) => {
-      const parsed = passwordResetVerifySchema.parse(request.body);
+      const parsed = passwordResetVerifySchema.parse(request.body) as Parameters<
+        typeof verifyPasswordReset
+      >[0];
       const session = await verifyPasswordReset(parsed);
       setSessionCookie(response, session.sessionToken, session.expiresAt);
       response.status(201).json({
@@ -396,7 +406,9 @@ export function createApp() {
   app.post(
     "/auth/legacy-activate/request-code",
     asyncHandler(async (request, response) => {
-      const parsed = legacyAccountActivationSchema.parse(request.body);
+      const parsed = legacyAccountActivationSchema.parse(request.body) as Parameters<
+        typeof requestLegacyAccountActivation
+      >[0];
       await requestLegacyAccountActivation(parsed);
       response.status(201).json({
         ok: true,
@@ -408,7 +420,9 @@ export function createApp() {
   app.post(
     "/auth/legacy-activate/verify",
     asyncHandler(async (request, response) => {
-      const parsed = legacyAccountActivationVerifySchema.parse(request.body);
+      const parsed = legacyAccountActivationVerifySchema.parse(request.body) as Parameters<
+        typeof verifyLegacyAccountActivation
+      >[0];
       const session = await verifyLegacyAccountActivation(parsed);
       setSessionCookie(response, session.sessionToken, session.expiresAt);
       response.status(201).json({
