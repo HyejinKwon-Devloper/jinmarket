@@ -1,7 +1,8 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 
 import { AdminChrome } from "../components/AdminChrome";
 
+import "./tailwind.css";
 import "./globals.css";
 
 const adminAppUrl =
@@ -12,30 +13,36 @@ const sharedOgImage = `${shopAppUrl.replace(/\/$/, "")}/header.png`;
 
 export const metadata: Metadata = {
   metadataBase: new URL(adminAppUrl),
-  title: "진의 벼룩시장 - 판매자 사이트",
-  description: "판매자용 상품 관리와 주문 관리",
+  title: "진마켓 판매자 센터",
+  description: "이벤트, 상품, 주문을 관리하는 진마켓 판매자용 어드민",
   openGraph: {
     type: "website",
     url: adminAppUrl,
-    title: "진의 벼룩시장 - 판매자 사이트",
-    description: "판매자용 상품 관리와 주문 관리",
-    siteName: "진의 벼룩시장",
+    title: "진마켓 판매자 센터",
+    description: "이벤트, 상품, 주문을 관리하는 진마켓 판매자용 어드민",
+    siteName: "진마켓",
     images: [
       {
         url: sharedOgImage,
-        alt: "진의 벼룩시장 판매자 사이트 대표 이미지",
+        alt: "진마켓 판매자 센터 대표 이미지",
       },
     ],
   },
   twitter: {
     card: "summary_large_image",
-    title: "진의 벼룩시장 - 판매자 사이트",
-    description: "판매자용 상품 관리와 주문 관리",
+    title: "진마켓 판매자 센터",
+    description: "이벤트, 상품, 주문을 관리하는 진마켓 판매자용 어드민",
     images: [sharedOgImage],
   },
   other: {
     "facebook-domain-verification": "ffk2jbyjn6phl8vetpkp87bjuf7q4o",
   },
+};
+
+export const viewport: Viewport = {
+  width: "device-width",
+  initialScale: 1,
+  viewportFit: "cover",
 };
 
 export default function RootLayout({

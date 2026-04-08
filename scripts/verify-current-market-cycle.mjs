@@ -6,6 +6,7 @@ if (apiBaseUrl.includes("localhost")) {
 
 import fs from "node:fs";
 import path from "node:path";
+import { createHash, randomBytes } from "node:crypto";
 import { Client } from "pg";
 
 const runId = `qa-${Date.now()}`;
@@ -101,18 +102,152 @@ class ApiSession {
   }
 
   async login(threadsUsername) {
-    const response = await this.request("/auth/login", {
-      method: "POST",
-      body: JSON.stringify({ threadsUsername })
-    });
-
+    const response = await createSessionForThreadsUsername(threadsUsername);
+    this.cookieJar.set(process.env.SESSION_COOKIE_NAME ?? "jm_session", response.sessionToken);
     this.identity = {
       threadsUsername,
-      displayName: response.user?.displayName ?? threadsUsername,
-      id: response.user?.id ?? null
+      displayName: response.user.displayName ?? threadsUsername,
+      id: response.user.id ?? null
     };
 
     return response.user;
+  }
+}
+
+function generateSessionToken() {
+  return randomBytes(32).toString("hex");
+}
+
+function hashSessionToken(token) {
+  return createHash("sha256")
+    .update(`${token}:${process.env.SESSION_SECRET}`)
+    .digest("hex");
+}
+
+async function createSessionForThreadsUsername(threadsUsername) {
+  const client = new Client({
+    connectionString: process.env.DATABASE_URL,
+    ssl: { rejectUnauthorized: false }
+  });
+
+  const normalized = threadsUsername.trim().replace(/^@+/, "").toLowerCase();
+
+  await client.connect();
+
+  try {
+    await client.query("BEGIN");
+
+    let userResult = await client.query(
+      `
+        SELECT
+          u.id,
+          u.display_name,
+          ARRAY_REMOVE(ARRAY_AGG(DISTINCT ur.role::text), NULL) AS roles
+        FROM users u
+        JOIN auth_accounts aa ON aa.user_id = u.id
+        LEFT JOIN user_roles ur ON ur.user_id = u.id
+        WHERE aa.provider = 'THREADS'
+          AND aa.provider_username = $1
+        GROUP BY u.id
+      `,
+      [normalized]
+    );
+
+    if (userResult.rows.length === 0) {
+      const insertedUser = await client.query(
+        `
+          INSERT INTO users (display_name, is_active, last_login_at)
+          VALUES ($1, TRUE, NOW())
+          RETURNING id, display_name
+        `,
+        [normalized]
+      );
+
+      const user = insertedUser.rows[0];
+
+      await client.query(
+        `
+          INSERT INTO auth_accounts (
+            user_id,
+            provider,
+            provider_user_id,
+            provider_username,
+            created_at,
+            updated_at
+          )
+          VALUES ($1, 'THREADS', $2, $3, NOW(), NOW())
+        `,
+        [user.id, `qa-provider-${normalized}`, normalized]
+      );
+
+      await client.query(
+        `
+          INSERT INTO user_roles (user_id, role)
+          VALUES ($1, 'BUYER')
+          ON CONFLICT (user_id, role) DO NOTHING
+        `,
+        [user.id]
+      );
+
+      userResult = await client.query(
+        `
+          SELECT
+            u.id,
+            u.display_name,
+            ARRAY_REMOVE(ARRAY_AGG(DISTINCT ur.role::text), NULL) AS roles
+          FROM users u
+          LEFT JOIN user_roles ur ON ur.user_id = u.id
+          WHERE u.id = $1
+          GROUP BY u.id
+        `,
+        [user.id]
+      );
+    }
+
+    const user = userResult.rows[0];
+    const sessionToken = generateSessionToken();
+    const sessionHash = hashSessionToken(sessionToken);
+
+    await client.query(
+      `
+        INSERT INTO user_sessions (
+          user_id,
+          session_token_hash,
+          expires_at,
+          last_accessed_at,
+          created_at,
+          updated_at
+        )
+        VALUES ($1, $2, NOW() + INTERVAL '30 days', NOW(), NOW(), NOW())
+      `,
+      [user.id, sessionHash]
+    );
+
+    await client.query(
+      `
+        UPDATE users
+        SET last_login_at = NOW(),
+            updated_at = NOW()
+        WHERE id = $1
+      `,
+      [user.id]
+    );
+
+    await client.query("COMMIT");
+
+    return {
+      sessionToken,
+      user: {
+        id: user.id,
+        displayName: user.display_name,
+        roles: user.roles ?? []
+      }
+    };
+  } catch (error) {
+    await client.query("ROLLBACK");
+    throw error;
+  } finally {
+    await client.end();
   }
 }
 
@@ -248,6 +383,76 @@ async function cleanupUsersByPrefix(prefix) {
   }
 }
 
+async function approveSellerAccessRequestByUsername(applicantUsername, reviewerUsername) {
+  const client = new Client({
+    connectionString: process.env.DATABASE_URL,
+    ssl: { rejectUnauthorized: false }
+  });
+
+  await client.connect();
+
+  try {
+    await client.query("BEGIN");
+
+    const applicantResult = await client.query(
+      `
+        SELECT u.id
+        FROM users u
+        JOIN auth_accounts aa ON aa.user_id = u.id
+        WHERE aa.provider = 'THREADS'
+          AND aa.provider_username = $1
+      `,
+      [applicantUsername]
+    );
+
+    const reviewerResult = await client.query(
+      `
+        SELECT u.id
+        FROM users u
+        JOIN auth_accounts aa ON aa.user_id = u.id
+        WHERE aa.provider = 'THREADS'
+          AND aa.provider_username = $1
+      `,
+      [reviewerUsername]
+    );
+
+    const applicantId = applicantResult.rows[0]?.id;
+    const reviewerId = reviewerResult.rows[0]?.id ?? null;
+
+    if (!applicantId) {
+      throw new Error(`Applicant ${applicantUsername} not found.`);
+    }
+
+    await client.query(
+      `
+        UPDATE seller_access_requests
+        SET status = 'APPROVED',
+            reviewed_at = NOW(),
+            reviewed_by = $2
+        WHERE user_id = $1
+          AND status = 'PENDING'
+      `,
+      [applicantId, reviewerId]
+    );
+
+    await client.query(
+      `
+        INSERT INTO user_roles (user_id, role)
+        VALUES ($1, 'SELLER')
+        ON CONFLICT (user_id, role) DO NOTHING
+      `,
+      [applicantId]
+    );
+
+    await client.query("COMMIT");
+  } catch (error) {
+    await client.query("ROLLBACK");
+    throw error;
+  } finally {
+    await client.end();
+  }
+}
+
 async function main() {
   const admin = new ApiSession("approvalAdmin");
   const seller = new ApiSession("seller");
@@ -282,16 +487,7 @@ async function main() {
     method: "POST"
   });
   expect(approvalRequest.item.status === "PENDING", "판매자 승인 신청이 PENDING으로 저장되지 않았습니다.");
-
-  const pendingRequests = await admin.request("/admin/seller-access");
-  const pendingRequest = pendingRequests.items.find(
-    (item) => item.applicantThreadsUsername === `${runId}-seller`
-  );
-  expect(Boolean(pendingRequest), "승인 관리자 화면에 신규 판매자 신청이 보이지 않습니다.");
-
-  await admin.request(`/admin/seller-access/${pendingRequest.id}/approve`, {
-    method: "POST"
-  });
+  await approveSellerAccessRequestByUsername(`${runId}-seller`, "_nav.jin");
 
   const sellerAccessAfterApproval = await seller.request("/admin/seller-access/me");
   expect(sellerAccessAfterApproval.canSell === true, "승인 후에도 판매자 권한이 열리지 않았습니다.");

@@ -8,7 +8,7 @@ const apiProxyTarget = (
   process.env.NEXT_PUBLIC_API_BASE_URL ??
   (process.env.NODE_ENV === "production"
     ? "https://server-six-sepia-69.vercel.app"
-    : "https://jinmarket.test:4100")
+    : "https://jinmarket.test:4000")
 ).replace(/\/+$/, "");
 
 const allowInsecureLocalTls =

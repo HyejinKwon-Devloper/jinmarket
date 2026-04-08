@@ -87,6 +87,9 @@ export default function ShopHomePage() {
             모든 구매는 로그인 후 진행됩니다. 구매가 성사되면 판매자가 계좌이체 안내를 위해 직접 연락해 드립니다.
           </p>
           <div className="actionRow" style={{ marginTop: 16 }}>
+            <Link className="secondaryButton" href="/events">
+              이벤트 존 바로가기
+            </Link>
             <Link className="ghostButton" href="/free-share">
               무료 나눔 존 바로가기
             </Link>

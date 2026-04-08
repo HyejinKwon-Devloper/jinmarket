@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
@@ -10,13 +10,14 @@ import { fetchCurrentUser, isApprovalAdmin, requestJson } from "../lib/api";
 const defaultShopAppUrl =
   process.env.NODE_ENV === "production"
     ? "https://web.jinmarket.shop"
-    : "https://jinmarket.test:3100";
+    : "https://jinmarket.test:3000";
 const shopAppUrl = process.env.NEXT_PUBLIC_SHOP_APP_URL ?? defaultShopAppUrl;
 
 export function AdminChrome({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<SessionUser | null>(null);
   const [navOpen, setNavOpen] = useState(false);
   const pathname = usePathname();
+  const isImmersiveRoute = pathname === "/random-game" || pathname.startsWith("/random-game/");
 
   useEffect(() => {
     void fetchCurrentUser()
@@ -37,6 +38,10 @@ export function AdminChrome({ children }: { children: React.ReactNode }) {
 
   function closeNav() {
     setNavOpen(false);
+  }
+
+  if (isImmersiveRoute) {
+    return <>{children}</>;
   }
 
   return (
@@ -62,6 +67,12 @@ export function AdminChrome({ children }: { children: React.ReactNode }) {
         </div>
 
         <nav id="admin-lnb" className={`nav ${navOpen ? "open" : ""}`}>
+          <Link href="/events" onClick={closeNav}>
+            이벤트 목록
+          </Link>
+          <Link href="/events/new" onClick={closeNav}>
+            이벤트 등록
+          </Link>
           <Link href="/products" onClick={closeNav}>
             상품 목록
           </Link>
@@ -70,6 +81,9 @@ export function AdminChrome({ children }: { children: React.ReactNode }) {
           </Link>
           <Link href="/orders" onClick={closeNav}>
             주문 관리
+          </Link>
+          <Link href="/random-game" onClick={closeNav}>
+            랜덤 게임
           </Link>
           {isApprovalAdmin(user) ? (
             <Link href="/seller-approval" onClick={closeNav}>

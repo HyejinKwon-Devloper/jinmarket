@@ -10,16 +10,16 @@ function getAdminActivationUrl() {
   }
 
   if (typeof window === "undefined") {
-    return "https://jinmarket.test:3200/activate-account";
+    return "https://jinmarket.test:3001/activate-account";
   }
 
   try {
     const nextUrl = new URL(window.location.href);
-    nextUrl.port = nextUrl.port === "3100" ? "3200" : nextUrl.port;
+    nextUrl.port = nextUrl.port === "3000" ? "3001" : nextUrl.port;
     nextUrl.pathname = "/activate-account";
     return `${nextUrl.origin}${nextUrl.pathname}`;
   } catch {
-    return "https://jinmarket.test:3200/activate-account";
+    return "https://jinmarket.test:3001/activate-account";
   }
 }
 
@@ -40,7 +40,7 @@ export default function ShopActivateAccountRedirectPage() {
       <p className="eyebrow">Seller Portal</p>
       <h1>기존 계정 전환은 판매자 사이트에서 진행해 주세요</h1>
       <p className="muted">
-        판매자 전용 이메일 인증과 기존 Threads 계정 전환은 판매자 사이트에서만 진행됩니다. 잠시 후 자동으로
+        판매자 전용 이메일 인증과 기존 계정 전환은 판매자 사이트에서만 진행됩니다. 잠시 후 자동으로
         이동합니다.
       </p>
       <div className="actionRow" style={{ marginTop: 20 }}>

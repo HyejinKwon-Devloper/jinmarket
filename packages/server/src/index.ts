@@ -4,6 +4,7 @@ import express, { type NextFunction, type Request, type Response } from "express
 import { z } from "zod";
 
 import {
+  type CreateEventInput,
   gameChoices,
   type CreatePriceOfferInput,
   type CreateProductInput,
@@ -33,6 +34,16 @@ import {
   verifySignupCode,
   verifySellerApprovalAdminPassword
 } from "./services/auth-service.js";
+import {
+  createEvent,
+  createEventEntry,
+  getEventDrawSource,
+  getPublicEventDetail,
+  getSellerEventDetail,
+  listEventEntries,
+  listPublicEvents,
+  listSellerEvents,
+} from "./services/event-service.js";
 import {
   acceptPriceOffer,
   createPriceOffer,
@@ -509,6 +520,36 @@ export function createApp() {
   );
 
   app.get(
+    "/events",
+    asyncHandler(async (_request, response) => {
+      response.json({ items: await listPublicEvents() });
+    })
+  );
+
+  app.get(
+    "/events/:eventId",
+    asyncHandler(async (request, response) => {
+      const eventId = getRequiredString(request.params.eventId, "eventId");
+      response.json({
+        item: await getPublicEventDetail(eventId, request.sessionUser?.id),
+      });
+    })
+  );
+
+  app.post(
+    "/events/:eventId/entries",
+    asyncHandler(async (request, response) => {
+      const user = requireAuth(request);
+      const eventId = getRequiredString(request.params.eventId, "eventId");
+      const item = await createEventEntry(user.id, eventId);
+      response.status(201).json({
+        item,
+        message: "이벤트 응모가 완료되었습니다. 당첨 발표를 기다려 주세요.",
+      });
+    })
+  );
+
+  app.get(
     "/products",
     asyncHandler(async (_request, response) => {
       response.json({ items: await listProducts() });
@@ -576,6 +617,50 @@ export function createApp() {
     asyncHandler(async (request, response) => {
       const user = requireSellerAccess(request);
       response.json(signCloudinaryUpload(user));
+    })
+  );
+
+  app.get(
+    "/admin/events",
+    asyncHandler(async (request, response) => {
+      const user = requireSellerAccess(request);
+      response.json({ items: await listSellerEvents(user.id) });
+    })
+  );
+
+  app.get(
+    "/admin/events/:eventId",
+    asyncHandler(async (request, response) => {
+      const user = requireSellerAccess(request);
+      const eventId = getRequiredString(request.params.eventId, "eventId");
+      response.json({ item: await getSellerEventDetail(user.id, eventId) });
+    })
+  );
+
+  app.post(
+    "/admin/events",
+    asyncHandler(async (request, response) => {
+      const user = requireSellerAccess(request);
+      const item = await createEvent(user.id, request.body as CreateEventInput);
+      response.status(201).json({ item });
+    })
+  );
+
+  app.get(
+    "/admin/events/:eventId/entries",
+    asyncHandler(async (request, response) => {
+      const user = requireSellerAccess(request);
+      const eventId = getRequiredString(request.params.eventId, "eventId");
+      response.json({ items: await listEventEntries(user.id, eventId) });
+    })
+  );
+
+  app.get(
+    "/admin/events/:eventId/draw-source",
+    asyncHandler(async (request, response) => {
+      const user = requireSellerAccess(request);
+      const eventId = getRequiredString(request.params.eventId, "eventId");
+      response.json({ item: await getEventDrawSource(user.id, eventId) });
     })
   );
 

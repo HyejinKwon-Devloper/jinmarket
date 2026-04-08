@@ -10,8 +10,8 @@
     "dev:api": "npm run dev --workspace @jinmarket/api",
     "dev:shop": "npm run dev --workspace @jinmarket/shop-web",
     "dev:admin": "npm run dev --workspace @jinmarket/admin-web",
-    "build": "npm run build --workspaces --if-present",
-    "typecheck": "npm run typecheck --workspaces --if-present"
+    "build": "npm run build --workspace @jinmarket/shared && npm run build --workspace @jinmarket/db && npm run build --workspace @jinmarket/server && npm run build --workspace @jinmarket/api && npm run build --workspace @jinmarket/shop-web && npm run build --workspace @jinmarket/admin-web",
+    "typecheck": "npm run typecheck --workspace @jinmarket/shared && npm run typecheck --workspace @jinmarket/db && npm run typecheck --workspace @jinmarket/server && npm run typecheck --workspace @jinmarket/api && npm run typecheck --workspace @jinmarket/shop-web && npm run typecheck --workspace @jinmarket/admin-web"
   },
   "devDependencies": {
     "@types/cookie-parser": "^1.4.8",

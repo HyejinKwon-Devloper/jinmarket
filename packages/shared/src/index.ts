@@ -1,4 +1,5 @@
 export const MAX_PRODUCT_IMAGES = 3;
+export const MAX_EVENT_IMAGES = 4;
 
 export const purchaseTypes = ["INSTANT_BUY", "GAME_CHANCE"] as const;
 export type PurchaseType = (typeof purchaseTypes)[number];
@@ -27,6 +28,9 @@ export type OrderSource = (typeof orderSources)[number];
 export const sellerAccessRequestStatuses = ["PENDING", "APPROVED", "REJECTED"] as const;
 export type SellerAccessRequestStatus = (typeof sellerAccessRequestStatuses)[number];
 
+export const eventRegistrationModes = ["MANUAL", "SHOP_ENTRY"] as const;
+export type EventRegistrationMode = (typeof eventRegistrationModes)[number];
+
 export interface SessionUser {
   id: string;
   displayName: string;
@@ -37,6 +41,17 @@ export interface SessionUser {
 }
 
 export interface ProductImage {
+  id?: string;
+  imageUrl: string;
+  providerPublicId: string;
+  width?: number | null;
+  height?: number | null;
+  bytes?: number | null;
+  sortOrder: number;
+  isPrimary: boolean;
+}
+
+export interface EventImage {
   id?: string;
   imageUrl: string;
   providerPublicId: string;
@@ -63,6 +78,48 @@ export interface ProductCard {
   saleEndsAt: string | null;
   isSaleActive: boolean;
   createdAt: string;
+}
+
+export interface EventCard {
+  id: string;
+  title: string;
+  description: string;
+  registrationMode: EventRegistrationMode;
+  sellerId: string;
+  sellerDisplayName: string;
+  primaryImageUrl: string | null;
+  startsAt: string;
+  endsAt: string;
+  entryCount: number;
+  createdAt: string;
+}
+
+export interface EventDetail extends EventCard {
+  images: EventImage[];
+  hasEntered?: boolean;
+  canEnter?: boolean;
+}
+
+export interface EventEntryRecord {
+  id: string;
+  eventId: string;
+  userId: string;
+  userDisplayName: string;
+  userThreadsUsername?: string | null;
+  enteredAt: string;
+}
+
+export interface EventDrawParticipant {
+  id: string;
+  name: string;
+}
+
+export interface EventDrawSource {
+  eventId: string;
+  eventTitle: string;
+  registrationMode: EventRegistrationMode;
+  sellerDisplayName: string;
+  participants: EventDrawParticipant[];
 }
 
 export interface ProductDetail extends ProductCard {
@@ -126,6 +183,15 @@ export interface CreateProductInput {
   saleStartsAt?: string;
   saleEndsAt?: string | null;
   images: ProductImage[];
+}
+
+export interface CreateEventInput {
+  title: string;
+  description: string;
+  registrationMode: EventRegistrationMode;
+  startsAt: string;
+  endsAt: string;
+  images: EventImage[];
 }
 
 export interface UpdateProductInput {

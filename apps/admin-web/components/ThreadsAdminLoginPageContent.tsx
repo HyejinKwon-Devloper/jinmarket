@@ -101,8 +101,8 @@ export function ThreadsAdminLoginPageContent() {
         method: "POST",
         body: JSON.stringify({
           loginId,
-          password
-        })
+          password,
+        }),
       });
 
       if (response.user.sellerEmailVerifiedAt) {
@@ -136,8 +136,8 @@ export function ThreadsAdminLoginPageContent() {
       const response = await requestJson<VerificationResponse>("/auth/seller-email/request-code", {
         method: "POST",
         body: JSON.stringify({
-          email: verificationEmail
-        })
+          email: verificationEmail,
+        }),
       });
       setVerificationRequested(true);
       setLoginMessage(response.message);
@@ -161,8 +161,8 @@ export function ThreadsAdminLoginPageContent() {
       const response = await requestJson<VerificationResponse>("/auth/seller-email/verify", {
         method: "POST",
         body: JSON.stringify({
-          code: verificationCode
-        })
+          code: verificationCode,
+        }),
       });
       setLoginMessage(response.message);
       redirectToTarget();
@@ -188,8 +188,8 @@ export function ThreadsAdminLoginPageContent() {
         body: JSON.stringify({
           loginId: resetLoginId,
           email: resetEmail,
-          portal: "ADMIN"
-        })
+          portal: "ADMIN",
+        }),
       });
       setResetRequested(true);
       setResetMessage(response.message);
@@ -222,8 +222,8 @@ export function ThreadsAdminLoginPageContent() {
           email: resetEmail,
           code: resetCode,
           newPassword: resetNewPassword,
-          portal: "ADMIN"
-        })
+          portal: "ADMIN",
+        }),
       });
       setResetMessage(response.message);
       redirectToTarget();
@@ -255,8 +255,8 @@ export function ThreadsAdminLoginPageContent() {
           loginId: signupLoginId,
           displayName: signupDisplayName,
           email: signupEmail,
-          password: signupPassword
-        })
+          password: signupPassword,
+        }),
       });
       setSignupVerificationRequested(true);
       setSignupMessage(response.message);
@@ -282,8 +282,8 @@ export function ThreadsAdminLoginPageContent() {
         body: JSON.stringify({
           loginId: signupLoginId,
           email: signupEmail,
-          code: signupVerificationCode
-        })
+          code: signupVerificationCode,
+        }),
       });
       setSignupMessage(response.message);
       redirectToTarget();
@@ -310,8 +310,8 @@ export function ThreadsAdminLoginPageContent() {
       <p className="eyebrow">Seller Login</p>
       <h1>판매자 사이트에 로그인해 주세요</h1>
       <p className="muted">
-        판매자 사이트는 주문 알림 메일을 보내기 위해 이메일 인증이 필요합니다. 기존 판매자 계정이라면
-        비밀번호 재설정 또는 기존 계정 전환을 이용해 주세요.
+        기존 판매자 계정으로 로그인할 수 있습니다. 판매자 사이트는 주문 알림 메일 발송을 위해 이메일 인증이
+        필요합니다.
       </p>
 
       {!needsSellerEmailVerification ? (
@@ -358,8 +358,8 @@ export function ThreadsAdminLoginPageContent() {
               <p className="eyebrow">Seller Reset</p>
               <h2 style={{ margin: "6px 0 0", fontSize: "1.15rem" }}>비밀번호 찾기</h2>
               <p className="muted" style={{ marginTop: 8 }}>
-                이미 등록된 판매자 이메일이 있다면 인증번호로 비밀번호를 다시 설정할 수 있습니다. 예전 Threads
-                계정이라 비밀번호 자체가 없다면 아래 계정 전환 페이지를 이용해 주세요.
+                이미 등록된 판매자 이메일이 있다면 인증번호로 비밀번호를 다시 설정할 수 있습니다. 기존 소셜 전용
+                계정이었다면 아래 계정 전환 페이지를 이용해 주세요.
               </p>
             </div>
             <div className="field">
@@ -440,10 +440,10 @@ export function ThreadsAdminLoginPageContent() {
 
           <div className="panel" style={{ marginTop: 12 }}>
             <p className="eyebrow">Legacy Seller</p>
-            <h2 style={{ margin: "6px 0 0", fontSize: "1.15rem" }}>기존 Threads 계정 전환</h2>
+            <h2 style={{ margin: "6px 0 0", fontSize: "1.15rem" }}>기존 계정 전환</h2>
             <p className="muted" style={{ marginTop: 8 }}>
-              예전 Threads 로그인만 쓰던 판매자 계정이라면, 판매자 사이트에서 이메일 인증 후 비밀번호를 새로
-              만들 수 있습니다.
+              예전 소셜 로그인 전용 판매자 계정이라면, 판매자 사이트에서 이메일 인증 후 비밀번호를 새로 만들 수
+              있습니다.
             </p>
             <div className="actionRow" style={{ marginTop: 14 }}>
               <Link className="ghostButton" href="/activate-account">

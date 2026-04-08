@@ -9,7 +9,7 @@ import { fetchCurrentUser, requestJson } from "../lib/api";
 const defaultAdminAppUrl =
   process.env.NODE_ENV === "production"
     ? "https://management.jinmarket.shop"
-    : "https://jinmarket.test:3200";
+    : "https://jinmarket.test:3001";
 const adminAppUrl = process.env.NEXT_PUBLIC_ADMIN_APP_URL ?? defaultAdminAppUrl;
 
 export function ShopChrome({ children }: { children: React.ReactNode }) {
@@ -51,6 +51,9 @@ export function ShopChrome({ children }: { children: React.ReactNode }) {
         <nav id="shop-lnb" className={`nav ${navOpen ? "open" : ""}`}>
           <Link href="/" onClick={closeNav}>
             상품 목록
+          </Link>
+          <Link href="/events" onClick={closeNav}>
+            이벤트 존
           </Link>
           <Link href="/free-share" onClick={closeNav}>
             무료 나눔 존

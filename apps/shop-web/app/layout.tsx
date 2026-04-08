@@ -1,6 +1,6 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 
-import { ShopChrome } from "../components/ShopChrome";
+import { AppShell } from "../components/AppShell";
 
 import "./globals.css";
 
@@ -9,30 +9,36 @@ const shopAppUrl =
 
 export const metadata: Metadata = {
   metadataBase: new URL(shopAppUrl),
-  title: "진의 벼룩시장 - 구매자 사이트",
-  description: "가위바위보와 즉시 구매를 지원하는 벼룩시장",
+  title: "진마켓 구매 사이트",
+  description: "가위바위보와 즉시 구매를 지원하는 진마켓 구매자용 웹앱",
   openGraph: {
     type: "website",
     url: shopAppUrl,
-    title: "진의 벼룩시장 - 구매자 사이트",
-    description: "가위바위보와 즉시 구매를 지원하는 벼룩시장",
-    siteName: "진의 벼룩시장",
+    title: "진마켓 구매 사이트",
+    description: "가위바위보와 즉시 구매를 지원하는 진마켓 구매자용 웹앱",
+    siteName: "진마켓",
     images: [
       {
         url: "/header.png",
-        alt: "진의 벼룩시장 대표 이미지",
+        alt: "진마켓 대표 이미지",
       },
     ],
   },
   twitter: {
     card: "summary_large_image",
-    title: "진의 벼룩시장 - 구매자 사이트",
-    description: "가위바위보와 즉시 구매를 지원하는 벼룩시장",
+    title: "진마켓 구매 사이트",
+    description: "가위바위보와 즉시 구매를 지원하는 진마켓 구매자용 웹앱",
     images: ["/header.png"],
   },
   other: {
     "facebook-domain-verification": "ffk2jbyjn6phl8vetpkp87bjuf7q4o",
   },
+};
+
+export const viewport: Viewport = {
+  width: "device-width",
+  initialScale: 1,
+  viewportFit: "cover",
 };
 
 export default function RootLayout({
@@ -43,7 +49,7 @@ export default function RootLayout({
   return (
     <html lang="ko">
       <body>
-        <ShopChrome>{children}</ShopChrome>
+        <AppShell>{children}</AppShell>
       </body>
     </html>
   );

@@ -60,8 +60,8 @@ export function ThreadsShopLoginPageContent() {
         method: "POST",
         body: JSON.stringify({
           loginId,
-          password
-        })
+          password,
+        }),
       });
       setLoginMessage(response.message);
       redirectToTarget();
@@ -92,8 +92,8 @@ export function ThreadsShopLoginPageContent() {
         body: JSON.stringify({
           loginId: signupLoginId,
           displayName: signupDisplayName,
-          password: signupPassword
-        })
+          password: signupPassword,
+        }),
       });
       setSignupMessage(response.message);
       redirectToTarget();
@@ -119,8 +119,8 @@ export function ThreadsShopLoginPageContent() {
         body: JSON.stringify({
           loginId: resetLoginId,
           email: resetEmail,
-          portal: "SHOP"
-        })
+          portal: "SHOP",
+        }),
       });
       setResetRequested(true);
       setResetMessage(response.message);
@@ -153,8 +153,8 @@ export function ThreadsShopLoginPageContent() {
           email: resetEmail,
           code: resetCode,
           newPassword: resetNewPassword,
-          portal: "SHOP"
-        })
+          portal: "SHOP",
+        }),
       });
       setResetMessage(response.message);
       redirectToTarget();
@@ -170,8 +170,7 @@ export function ThreadsShopLoginPageContent() {
       <p className="eyebrow">Buyer Login</p>
       <h1>구매자 사이트에 로그인해 주세요</h1>
       <p className="muted">
-        구매와 무료 나눔 신청은 로그인 후 이용할 수 있습니다. 구매자 사이트는 이메일 인증 없이 바로 가입할 수
-        있습니다.
+        일반 구매자 계정으로 로그인할 수 있습니다. 구매와 무료 나눔 신청은 로그인 후 이용할 수 있습니다.
       </p>
 
       <form onSubmit={handleLoginSubmit} style={{ marginTop: 20, display: "grid", gap: 12 }}>

@@ -59,7 +59,7 @@ function normalizeOrigin(value?: string | null) {
 const localDevOrigins = Array.from(
   new Set(
     [devHost, "localhost", "127.0.0.1"].flatMap((host) =>
-      [3100, 3200].flatMap((port) => [`https://${host}:${port}`, `http://${host}:${port}`])
+      [3000, 3001].flatMap((port) => [`https://${host}:${port}`, `http://${host}:${port}`])
     )
   )
 );
@@ -81,7 +81,7 @@ const defaultAllowedOrigins = Array.from(
 
 const envSchema = z.object({
   DEV_HOST: z.string().default(devHost),
-  API_PORT: z.coerce.number().default(4100),
+  API_PORT: z.coerce.number().default(4000),
   SESSION_COOKIE_NAME: z.string().default("jm_session"),
   SESSION_SECRET: z.string().min(1).default("change-me"),
   LEGACY_ACCOUNT_ACTIVATION_TOKEN: z.string().default(""),

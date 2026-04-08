@@ -3,20 +3,34 @@
   "version": "0.0.1",
   "private": true,
   "scripts": {
-    "dev": "node ../../scripts/next-dev-https.mjs --dir . --port 3200",
+    "dev:plain": "next dev",
+    "dev": "node ../../scripts/next-dev-https.mjs --dir . --port 3001",
     "build": "next build",
-    "typecheck": "tsc --project tsconfig.json --noEmit"
+    "start": "next start",
+    "typecheck": "tsc --project tsconfig.json --noEmit",
+    "test:draw": "node --import tsx --test ./features/random-game/lib/draw.test.ts",
+    "test:random-game": "node --import tsx --test ./features/random-game/lib/draw.test.ts ./features/random-game/lib/draw-route.test.ts",
+    "test:e2e": "playwright test",
+    "test:e2e:headed": "playwright test --headed"
   },
   "dependencies": {
     "@jinmarket/shared": "0.0.1",
+    "framer-motion": "^12.38.0",
     "next": "^15.2.2",
     "react": "^19.0.0",
-    "react-dom": "^19.0.0"
+    "react-dom": "^19.0.0",
+    "zustand": "^5.0.12"
   },
   "devDependencies": {
+    "@playwright/test": "^1.59.1",
+    "@tailwindcss/postcss": "^4.1.14",
     "@types/node": "^22.13.14",
     "@types/react": "^19.0.10",
     "@types/react-dom": "^19.0.4",
+    "autoprefixer": "^10.4.27",
+    "postcss": "^8.4.31",
+    "tailwindcss": "^4.2.2",
+    "tsx": "^4.19.4",
     "typescript": "^5.8.2"
   }
 }

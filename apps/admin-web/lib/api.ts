@@ -1,33 +1,39 @@
-﻿import { MAX_PRODUCT_IMAGES } from "@jinmarket/shared";
+import { MAX_EVENT_IMAGES, MAX_PRODUCT_IMAGES } from "@jinmarket/shared";
 import type {
+  EventRegistrationMode,
   ProductStatus,
   PurchaseType,
   SellerAccessOverview,
   SessionUser,
-  UploadSignatureResponse
+  UploadSignatureResponse,
 } from "@jinmarket/shared";
 
-const defaultApiBaseUrl = (process.env.NEXT_PUBLIC_API_BASE_URL ?? "/api").replace(/\/+$/, "");
+const defaultApiBaseUrl = (
+  process.env.NEXT_PUBLIC_API_BASE_URL ?? "/api"
+).replace(/\/+$/, "");
 
 export const apiBaseUrl = defaultApiBaseUrl;
 
 export class ApiError extends Error {
   constructor(
     message: string,
-    public readonly code?: string
+    public readonly code?: string,
   ) {
     super(message);
   }
 }
 
-export async function requestJson<T>(path: string, init?: RequestInit): Promise<T> {
+export async function requestJson<T>(
+  path: string,
+  init?: RequestInit,
+): Promise<T> {
   const response = await fetch(`${apiBaseUrl}${path}`, {
     ...init,
     credentials: "include",
     headers: {
       "Content-Type": "application/json",
-      ...(init?.headers ?? {})
-    }
+      ...(init?.headers ?? {}),
+    },
   });
 
   const payload = await response.json().catch(() => ({}));
@@ -42,10 +48,12 @@ export async function requestJson<T>(path: string, init?: RequestInit): Promise<
 export async function fetchCurrentUser() {
   const response = await fetch(`${apiBaseUrl}/me`, {
     credentials: "include",
-    cache: "no-store"
+    cache: "no-store",
   });
 
-  const payload = (await response.json().catch(() => ({ user: null }))) as { user: SessionUser | null };
+  const payload = (await response.json().catch(() => ({ user: null }))) as {
+    user: SessionUser | null;
+  };
   return payload.user;
 }
 
@@ -54,7 +62,9 @@ export function isApprovalAdmin(user?: SessionUser | null) {
 }
 
 export function hasSellerAccess(user?: SessionUser | null) {
-  return Boolean(user && (user.roles.includes("SELLER") || isApprovalAdmin(user)));
+  return Boolean(
+    user && (user.roles.includes("SELLER") || isApprovalAdmin(user)),
+  );
 }
 
 export async function fetchSellerAccessOverview() {
@@ -62,11 +72,21 @@ export async function fetchSellerAccessOverview() {
 }
 
 export async function uploadImages(files: File[]) {
-  if (files.length > MAX_PRODUCT_IMAGES) {
-    throw new Error(`이미지는 최대 ${MAX_PRODUCT_IMAGES}장까지 업로드할 수 있습니다.`);
+  return uploadCloudinaryImages(files, MAX_PRODUCT_IMAGES);
+}
+
+export async function uploadEventImages(files: File[]) {
+  return uploadCloudinaryImages(files, MAX_EVENT_IMAGES);
+}
+
+async function uploadCloudinaryImages(files: File[], maxCount: number) {
+  if (files.length > maxCount) {
+    throw new Error(`이미지는 최대 ${maxCount}장까지 업로드할 수 있습니다.`);
   }
 
-  const signature = await requestJson<UploadSignatureResponse>("/uploads/sign", { method: "POST" });
+  const signature = await requestJson<UploadSignatureResponse>("/uploads/sign", {
+    method: "POST",
+  });
   const uploads = await Promise.all(
     files.map(async (file, index) => {
       const formData = new FormData();
@@ -76,15 +96,20 @@ export async function uploadImages(files: File[]) {
       formData.append("signature", signature.signature);
       formData.append("folder", signature.folder);
 
-      const response = await fetch(`https://api.cloudinary.com/v1_1/${signature.cloudName}/image/upload`, {
-        method: "POST",
-        body: formData
-      });
+      const response = await fetch(
+        `https://api.cloudinary.com/v1_1/${signature.cloudName}/image/upload`,
+        {
+          method: "POST",
+          body: formData,
+        },
+      );
 
       const payload = await response.json();
 
       if (!response.ok) {
-        throw new Error(payload.error?.message ?? "Cloudinary 업로드에 실패했습니다.");
+        throw new Error(
+          payload.error?.message ?? "Cloudinary 업로드에 실패했습니다.",
+        );
       }
 
       return {
@@ -94,9 +119,9 @@ export async function uploadImages(files: File[]) {
         height: payload.height as number,
         bytes: payload.bytes as number,
         sortOrder: index + 1,
-        isPrimary: index === 0
+        isPrimary: index === 0,
       };
-    })
+    }),
   );
 
   return uploads;
@@ -108,6 +133,10 @@ export function formatPrice(price: number) {
 
 export function purchaseTypeLabel(value: PurchaseType) {
   return value === "INSTANT_BUY" ? "즉시 구매" : "가위바위보 판매";
+}
+
+export function eventRegistrationModeLabel(value: EventRegistrationMode) {
+  return value === "SHOP_ENTRY" ? "구매자 사이트 응모" : "직접 등록";
 }
 
 export function statusLabel(value: ProductStatus) {
