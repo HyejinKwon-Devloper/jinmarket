@@ -164,20 +164,26 @@ export default function AdminProductDetailPage() {
     );
   }
 
+  const primaryImageUrl =
+    item.images[0]?.imageUrl ?? "https://placehold.co/800x800?text=No+Image";
+
   return (
     <>
       <section className="detailGrid">
         <div className="panel gallery">
-          <div className="thumbRow">
-            {item.images.map((image) => (
-              <img
-                key={image.providerPublicId}
-                className="thumb"
-                src={image.imageUrl}
-                alt={item.title}
-              />
-            ))}
-          </div>
+          <img className="heroImage" src={primaryImageUrl} alt={item.title} />
+          {item.images.length > 1 ? (
+            <div className="thumbRow">
+              {item.images.map((image) => (
+                <img
+                  key={image.providerPublicId}
+                  className="thumb"
+                  src={image.imageUrl}
+                  alt={item.title}
+                />
+              ))}
+            </div>
+          ) : null}
         </div>
 
         <div className="panel adminDetailPanel">

@@ -114,7 +114,8 @@ export function ManagedSellerApprovalPageContent() {
         <p className="eyebrow">Seller Approval</p>
         <h1>관리자 비밀번호 확인</h1>
         <p className="muted">
-          판매자 승인 목록은 관리자 로그인만으로는 열리지 않습니다. 관리자 비밀번호를 한 번 더 확인해 주세요.
+          판매자 승인 목록은 관리자 로그인만으로 바로 열리지 않습니다. 관리자 비밀번호를 한 번 더
+          확인해 주세요.
         </p>
         <form
           onSubmit={async (event) => {
@@ -168,7 +169,8 @@ export function ManagedSellerApprovalPageContent() {
       <p className="eyebrow">Seller Approval</p>
       <h1>판매자 승인 요청 목록</h1>
       <p className="muted">
-        여기서 요청을 수락하면 해당 계정에 판매 권한이 추가되고, 이후 상품 등록과 판매 관리가 가능해집니다.
+        여기서 요청을 수락하면 해당 계정은 판매 권한을 얻고, 이후 상품 등록과 판매 관리를 시작할 수
+        있습니다.
       </p>
 
       {message ? <div className="message">{message}</div> : null}

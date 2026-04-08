@@ -20,6 +20,8 @@ import type {
 import { AppError, isPgUniqueError } from "../errors.js";
 import { env } from "../env.js";
 
+import { accountIdentityJoins, accountLoginIdSql } from "./account-sql.js";
+
 cloudinary.config({
   cloud_name: env.CLOUDINARY_CLOUD_NAME,
   api_key: env.CLOUDINARY_API_KEY,
@@ -559,10 +561,10 @@ export async function getProductDetail(productId: string, viewerId?: string | nu
         p.title AS product_title,
         o.seller_id,
         CASE WHEN p.is_anonymous THEN NULL ELSE seller.display_name END AS seller_display_name,
-        CASE WHEN p.is_anonymous THEN NULL ELSE seller_auth.provider_username END AS seller_threads_username,
+        CASE WHEN p.is_anonymous THEN NULL ELSE ${accountLoginIdSql("seller")} END AS seller_threads_username,
         o.buyer_id,
         buyer.display_name AS buyer_display_name,
-        buyer_auth.provider_username AS buyer_threads_username,
+        ${accountLoginIdSql("buyer")} AS buyer_threads_username,
         o.source,
         o.status,
         o.ordered_at
@@ -570,8 +572,8 @@ export async function getProductDetail(productId: string, viewerId?: string | nu
       JOIN products p ON p.id = o.product_id
       JOIN users seller ON seller.id = o.seller_id
       JOIN users buyer ON buyer.id = o.buyer_id
-      LEFT JOIN auth_accounts seller_auth ON seller_auth.user_id = seller.id AND seller_auth.provider = 'THREADS'
-      LEFT JOIN auth_accounts buyer_auth ON buyer_auth.user_id = buyer.id AND buyer_auth.provider = 'THREADS'
+      ${accountIdentityJoins("seller")}
+      ${accountIdentityJoins("buyer")}
       WHERE o.product_id = $1
         AND o.status <> 'CANCELLED'
     `,
@@ -900,13 +902,13 @@ export async function listSellerProducts(sellerId: string): Promise<SellerProduc
         pi.image_url AS primary_image_url,
         o.id AS sold_order_id,
         buyer.display_name AS sold_buyer_display_name,
-        buyer_auth.provider_username AS sold_buyer_threads_username
+        ${accountLoginIdSql("buyer")} AS sold_buyer_threads_username
       FROM products p
       JOIN users u ON u.id = p.seller_id
       LEFT JOIN product_images pi ON pi.product_id = p.id AND pi.is_primary = TRUE
       LEFT JOIN orders o ON o.product_id = p.id AND o.status <> 'CANCELLED'
       LEFT JOIN users buyer ON buyer.id = o.buyer_id
-      LEFT JOIN auth_accounts buyer_auth ON buyer_auth.user_id = buyer.id AND buyer_auth.provider = 'THREADS'
+      ${accountIdentityJoins("buyer")}
       WHERE p.seller_id = $1
       ORDER BY p.created_at DESC
     `,
@@ -1030,11 +1032,13 @@ export async function createPriceOffer(userId: string, productId: string, input:
           inserted.product_id,
           inserted.buyer_id,
           u.display_name AS buyer_display_name,
+          ${accountLoginIdSql("buyer")} AS buyer_threads_username,
           inserted.offered_price_krw,
           inserted.note,
           inserted.created_at
         FROM inserted
         JOIN users u ON u.id = inserted.buyer_id
+        ${accountIdentityJoins("buyer", "u")}
       `,
       [productId, userId, parsed.offeredPriceKrw, parsed.note || null]
     );
@@ -1064,13 +1068,13 @@ export async function listProductPriceOffers(sellerId: string, productId: string
         po.product_id,
         po.buyer_id,
         u.display_name AS buyer_display_name,
-        aa.provider_username AS buyer_threads_username,
+        ${accountLoginIdSql("buyer")} AS buyer_threads_username,
         po.offered_price_krw,
         po.note,
         po.created_at
       FROM price_offers po
       JOIN users u ON u.id = po.buyer_id
-      LEFT JOIN auth_accounts aa ON aa.user_id = u.id AND aa.provider = 'THREADS'
+      ${accountIdentityJoins("buyer", "u")}
       WHERE po.product_id = $1
       ORDER BY po.created_at DESC
     `,
@@ -1135,13 +1139,13 @@ export async function acceptPriceOffer(sellerId: string, productId: string, offe
           po.product_id,
           po.buyer_id,
           u.display_name AS buyer_display_name,
-          aa.provider_username AS buyer_threads_username,
+          ${accountLoginIdSql("buyer")} AS buyer_threads_username,
           po.offered_price_krw,
           po.note,
           po.created_at
         FROM price_offers po
         JOIN users u ON u.id = po.buyer_id
-        LEFT JOIN auth_accounts aa ON aa.user_id = u.id AND aa.provider = 'THREADS'
+        ${accountIdentityJoins("buyer", "u")}
         WHERE po.id = $1 AND po.product_id = $2
         FOR UPDATE OF po
       `,
@@ -1172,18 +1176,18 @@ export async function acceptPriceOffer(sellerId: string, productId: string, offe
             $5::text AS product_title,
             inserted.seller_id,
             seller.display_name AS seller_display_name,
-            seller_auth.provider_username AS seller_threads_username,
+            ${accountLoginIdSql("seller")} AS seller_threads_username,
             inserted.buyer_id,
             buyer.display_name AS buyer_display_name,
-            buyer_auth.provider_username AS buyer_threads_username,
+            ${accountLoginIdSql("buyer")} AS buyer_threads_username,
             inserted.source,
             inserted.status,
             inserted.ordered_at
           FROM inserted
           JOIN users seller ON seller.id = inserted.seller_id
           JOIN users buyer ON buyer.id = inserted.buyer_id
-          LEFT JOIN auth_accounts seller_auth ON seller_auth.user_id = seller.id AND seller_auth.provider = 'THREADS'
-          LEFT JOIN auth_accounts buyer_auth ON buyer_auth.user_id = buyer.id AND buyer_auth.provider = 'THREADS'
+          ${accountIdentityJoins("seller")}
+          ${accountIdentityJoins("buyer")}
         `,
         [product.id, sellerId, offer.buyer_id, offer.note ?? null, product.title]
       );
@@ -1228,10 +1232,10 @@ export async function listSellerOrders(sellerId: string) {
         p.title AS product_title,
         o.seller_id,
         CASE WHEN p.is_anonymous THEN NULL ELSE seller.display_name END AS seller_display_name,
-        CASE WHEN p.is_anonymous THEN NULL ELSE seller_auth.provider_username END AS seller_threads_username,
+        CASE WHEN p.is_anonymous THEN NULL ELSE ${accountLoginIdSql("seller")} END AS seller_threads_username,
         o.buyer_id,
         buyer.display_name AS buyer_display_name,
-        buyer_auth.provider_username AS buyer_threads_username,
+        ${accountLoginIdSql("buyer")} AS buyer_threads_username,
         o.source,
         o.status,
         o.ordered_at
@@ -1239,8 +1243,8 @@ export async function listSellerOrders(sellerId: string) {
       JOIN products p ON p.id = o.product_id
       JOIN users seller ON seller.id = o.seller_id
       JOIN users buyer ON buyer.id = o.buyer_id
-      LEFT JOIN auth_accounts seller_auth ON seller_auth.user_id = seller.id AND seller_auth.provider = 'THREADS'
-      LEFT JOIN auth_accounts buyer_auth ON buyer_auth.user_id = buyer.id AND buyer_auth.provider = 'THREADS'
+      ${accountIdentityJoins("seller")}
+      ${accountIdentityJoins("buyer")}
       WHERE o.seller_id = $1
       ORDER BY o.ordered_at DESC
     `,
@@ -1259,10 +1263,10 @@ export async function listMyOrders(userId: string) {
         p.title AS product_title,
         o.seller_id,
         CASE WHEN p.is_anonymous THEN NULL ELSE seller.display_name END AS seller_display_name,
-        CASE WHEN p.is_anonymous THEN NULL ELSE seller_auth.provider_username END AS seller_threads_username,
+        CASE WHEN p.is_anonymous THEN NULL ELSE ${accountLoginIdSql("seller")} END AS seller_threads_username,
         o.buyer_id,
         buyer.display_name AS buyer_display_name,
-        buyer_auth.provider_username AS buyer_threads_username,
+        ${accountLoginIdSql("buyer")} AS buyer_threads_username,
         o.source,
         o.status,
         o.ordered_at
@@ -1270,8 +1274,8 @@ export async function listMyOrders(userId: string) {
       JOIN products p ON p.id = o.product_id
       JOIN users seller ON seller.id = o.seller_id
       JOIN users buyer ON buyer.id = o.buyer_id
-      LEFT JOIN auth_accounts seller_auth ON seller_auth.user_id = seller.id AND seller_auth.provider = 'THREADS'
-      LEFT JOIN auth_accounts buyer_auth ON buyer_auth.user_id = buyer.id AND buyer_auth.provider = 'THREADS'
+      ${accountIdentityJoins("seller")}
+      ${accountIdentityJoins("buyer")}
       WHERE o.buyer_id = $1
       ORDER BY o.ordered_at DESC
     `,

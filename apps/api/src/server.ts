@@ -12,7 +12,7 @@ const pfxPath = process.env.DEV_HTTPS_PFX_PATH
   ? resolve(repoRoot, process.env.DEV_HTTPS_PFX_PATH)
   : join(repoRoot, "certificates", "localhost-dev.pfx");
 const passphrase = process.env.DEV_HTTPS_PFX_PASSPHRASE ?? "jinmarket-local";
-const port = Number(process.env.API_PORT ?? 4000);
+const port = Number(process.env.API_PORT ?? 4100);
 
 if (!existsSync(pfxPath)) {
   throw new Error(`HTTPS certificate not found at ${pfxPath}. Run "npm run dev:cert" first.`);

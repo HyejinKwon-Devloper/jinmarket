@@ -1,91 +1,157 @@
-﻿import type { Response } from "express";
+import type { Response } from "express";
+import { createHash, randomInt, timingSafeEqual } from "node:crypto";
 import { z } from "zod";
-import { createHash, timingSafeEqual } from "node:crypto";
 
-import {
-  query,
-  withTransaction,
-  type DbClient,
-} from "../../../db/src/index.js";
+import { query, withTransaction, type DbClient } from "../../../db/src/index.js";
 import type { SessionUser } from "../../../shared/src/index.js";
 
-import { AppError } from "../errors.js";
-import {
-  allowedOrigins,
-  env,
-  isThreadsOauthConfigured,
-  sellerApprovalAdminThreadsUserId,
-} from "../env.js";
-import {
-  addDays,
-  generateSessionToken,
-  hashSessionToken,
-} from "../utils/auth.js";
+import { AppError, isPgUniqueError } from "../errors.js";
+import { env, sellerApprovalAdminLoginId } from "../env.js";
+import { addDays, generateSessionToken, hashSessionToken } from "../utils/auth.js";
+import { hashPassword, hashVerificationCode, verifyPassword } from "../utils/password.js";
 
-export const threadsOauthStateCookieName = "jm_threads_oauth_state";
+import { accountIdentityJoins, accountLoginIdSql } from "./account-sql.js";
+import {
+  sendLegacyAccountActivationCode,
+  sendPasswordResetCode,
+  sendSellerPortalVerificationCode,
+  sendSignupVerificationCode
+} from "./mail-service.js";
+
 export const sellerApprovalAuthCookieName = "jm_seller_approval_auth";
 
-const oauthStateSchema = z.object({
-  nonce: z.string().min(20),
-  returnTo: z.string().url(),
-});
-
-const shortLivedTokenSchema = z.object({
-  access_token: z.string().min(1),
-  user_id: z.coerce.string().min(1),
-});
-
-const longLivedTokenSchema = z.object({
-  access_token: z.string().min(1),
-  expires_in: z.coerce.number().positive(),
-  token_type: z.string().optional(),
-});
-
-const threadsProfileSchema = z.object({
-  id: z.coerce.string().min(1),
-  username: z.string().trim().min(1),
-  name: z.string().trim().optional().nullable(),
-  threads_profile_picture_url: z.string().trim().url().optional().nullable(),
-});
+const emailSchema = z.string().trim().email().max(255);
 
 type SessionUserRow = {
   id: string;
   display_name: string;
   email: string | null;
-  threads_username: string | null;
+  seller_email_verified_at: Date | null;
+  login_id: string | null;
   roles: string[] | null;
 };
 
-type ThreadsIdentity = {
-  providerUserId: string;
-  username: string;
-  displayName: string;
-  email?: string | null;
-  profileImageUrl?: string | null;
+type LocalAccountRow = {
+  id: string;
+  display_name: string;
+  email: string | null;
+  seller_email_verified_at: Date | null;
+  is_active: boolean;
+  login_id: string;
+  password_hash: string;
 };
+
+type PendingSignupRow = {
+  id: string;
+  login_id: string;
+  display_name: string;
+  email: string;
+  password_hash: string;
+  verification_code_hash: string;
+  code_expires_at: Date;
+};
+
+type PendingSellerEmailVerificationRow = {
+  user_id: string;
+  email: string;
+  verification_code_hash: string;
+  code_expires_at: Date;
+};
+
+type SellerVerificationIdentityRow = {
+  display_name: string;
+  login_id: string | null;
+};
+
+type PasswordResetTargetRow = {
+  user_id: string;
+  display_name: string;
+  email: string | null;
+  login_id: string | null;
+  has_local_password: boolean;
+  roles: string[] | null;
+};
+
+type PasswordResetRequestRow = {
+  user_id: string;
+  email: string;
+  verification_code_hash: string;
+  code_expires_at: Date;
+};
+
+type LegacyActivationRequestRow = {
+  user_id: string;
+  email: string;
+  verification_code_hash: string;
+  code_expires_at: Date;
+};
+
+type LegacyActivationTargetRow = {
+  user_id: string;
+  display_name: string;
+  login_id: string;
+  has_local_password: boolean;
+};
+
+type PasswordResetPortal = "SHOP" | "ADMIN";
 
 function mapSessionUser(row: SessionUserRow): SessionUser {
   return {
     id: row.id,
     displayName: row.display_name,
     email: row.email,
-    threadsUsername: row.threads_username,
-    roles: row.roles ?? [],
+    sellerEmailVerifiedAt: row.seller_email_verified_at ? row.seller_email_verified_at.toISOString() : null,
+    threadsUsername: row.login_id,
+    roles: row.roles ?? []
   };
 }
 
-function normalizeThreadsUsername(rawUsername: string) {
-  const normalized = rawUsername.trim().replace(/^@+/, "").toLowerCase();
+function normalizeLoginId(rawLoginId: string) {
+  const normalized = rawLoginId.trim().replace(/^@+/, "").toLowerCase();
 
-  if (normalized.length < 2 || normalized.length > 120) {
-    throw new AppError("올바른 Threads 아이디를 입력해 주세요.", 400);
+  if (!/^[a-z0-9._-]{2,120}$/.test(normalized)) {
+    throw new AppError(
+      "Threads 아이디는 2자 이상 120자 이하의 영문, 숫자, 점(.), 밑줄(_), 하이픈(-)만 사용할 수 있습니다.",
+      400
+    );
   }
 
   return normalized;
 }
 
+function normalizeDisplayName(rawDisplayName: string) {
+  const normalized = rawDisplayName.trim();
+
+  if (normalized.length < 2 || normalized.length > 60) {
+    throw new AppError("이름은 2자 이상 60자 이하로 입력해 주세요.", 400);
+  }
+
+  return normalized;
+}
+
+function normalizeEmail(rawEmail: string) {
+  return emailSchema.parse(rawEmail).toLowerCase();
+}
+
+function normalizeVerificationCode(rawCode: string) {
+  const normalized = rawCode.trim();
+
+  if (!/^\d{6}$/.test(normalized)) {
+    throw new AppError("인증번호는 6자리 숫자로 입력해 주세요.", 400);
+  }
+
+  return normalized;
+}
+
+function assertPasswordLength(password: string) {
+  if (password.length < 8 || password.length > 200) {
+    throw new AppError("비밀번호는 8자 이상 200자 이하로 입력해 주세요.", 400);
+  }
+}
+
 function isSecureCookie() {
-  return env.THREADS_REDIRECT_URI.startsWith("https://");
+  const apiBaseUrl = process.env.NEXT_PUBLIC_API_BASE_URL ?? `https://${env.DEV_HOST}:${env.API_PORT}`;
+  return apiBaseUrl.startsWith("https://");
 }
 
 function cookieOptions(expires?: Date) {
@@ -96,7 +162,7 @@ function cookieOptions(expires?: Date) {
     sameSite: secure ? ("none" as const) : ("lax" as const),
     secure,
     path: "/",
-    ...(expires ? { expires } : {}),
+    ...(expires ? { expires } : {})
   };
 }
 
@@ -111,55 +177,22 @@ function compareSecret(left: string, right: string) {
   return timingSafeEqual(leftBuffer, rightBuffer);
 }
 
+function verifyLegacyAccountActivationToken(token?: string) {
+  const expectedToken = env.LEGACY_ACCOUNT_ACTIVATION_TOKEN.trim();
+
+  if (!expectedToken) {
+    return;
+  }
+
+  if (!token || !compareSecret(token, expectedToken)) {
+    throw new AppError("유효하지 않은 계정 전환 링크입니다.", 403, "INVALID_ACTIVATION_LINK");
+  }
+}
+
 function getSellerApprovalCookieValue(sessionToken: string, userId: string) {
   return createHash("sha256")
-    .update(
-      `${sessionToken}:${userId}:${env.SELLER_APPROVAL_ADMIN_PASSWORD}:${env.SESSION_SECRET}`,
-    )
+    .update(`${sessionToken}:${userId}:${env.SELLER_APPROVAL_ADMIN_PASSWORD}:${env.SESSION_SECRET}`)
     .digest("hex");
-}
-
-function encodeOauthState(state: z.infer<typeof oauthStateSchema>) {
-  return Buffer.from(JSON.stringify(state), "utf8").toString("base64url");
-}
-
-function readThreadsOauthState(rawValue?: string | null) {
-  if (!rawValue) {
-    return null;
-  }
-
-  try {
-    const decoded = Buffer.from(rawValue, "base64url").toString("utf8");
-    return oauthStateSchema.parse(JSON.parse(decoded));
-  } catch {
-    return null;
-  }
-}
-
-function normalizeReturnTo(returnTo?: string) {
-  const fallbackOrigin = allowedOrigins[0] ?? "https://localhost:3000";
-
-  if (!returnTo) {
-    return new URL("/", fallbackOrigin).toString();
-  }
-
-  try {
-    const url = new URL(returnTo);
-    if (allowedOrigins.includes(url.origin)) {
-      return url.toString();
-    }
-  } catch {
-    // Ignore malformed URLs and fall back.
-  }
-
-  return new URL("/", fallbackOrigin).toString();
-}
-
-function getLoginPageUrl(returnTo?: string | null) {
-  const fallbackOrigin = allowedOrigins[0] ?? "https://localhost:3000";
-  const normalized = normalizeReturnTo(returnTo ?? undefined);
-  const origin = new URL(normalized).origin || fallbackOrigin;
-  return new URL("/login", origin);
 }
 
 async function getUserBySessionHash(sessionHash: string) {
@@ -169,110 +202,22 @@ async function getUserBySessionHash(sessionHash: string) {
         u.id,
         u.display_name,
         u.email,
-        aa.provider_username AS threads_username,
+        u.seller_email_verified_at,
+        ${accountLoginIdSql("session_user")} AS login_id,
         ARRAY_REMOVE(ARRAY_AGG(DISTINCT ur.role::text), NULL) AS roles
       FROM user_sessions us
       JOIN users u ON u.id = us.user_id
-      LEFT JOIN auth_accounts aa ON aa.user_id = u.id AND aa.provider = 'THREADS'
+      ${accountIdentityJoins("session_user", "u")}
       LEFT JOIN user_roles ur ON ur.user_id = u.id
       WHERE us.session_token_hash = $1
         AND us.revoked_at IS NULL
         AND us.expires_at > NOW()
-      GROUP BY u.id, aa.provider_username
+      GROUP BY u.id, ${accountLoginIdSql("session_user")}
     `,
-    [sessionHash],
+    [sessionHash]
   );
 
   return result.rows[0] ? mapSessionUser(result.rows[0]) : null;
-}
-
-async function fetchJsonOrThrow<T>(
-  response: globalThis.Response,
-  schema: z.ZodSchema<T>,
-  fallbackMessage: string,
-) {
-  const rawText = await response.text();
-  let payload: unknown = {};
-
-  if (rawText) {
-    try {
-      payload = JSON.parse(rawText) as unknown;
-    } catch {
-      payload = { message: rawText };
-    }
-  }
-
-  if (!response.ok) {
-    const message =
-      typeof payload === "object" && payload !== null
-        ? (((payload as Record<string, unknown>).error_message as
-            | string
-            | undefined) ??
-          ((payload as Record<string, unknown>).message as
-            | string
-            | undefined) ??
-          fallbackMessage)
-        : fallbackMessage;
-
-    throw new AppError(message, 502);
-  }
-
-  return schema.parse(payload);
-}
-
-async function exchangeCodeForShortLivedToken(code: string) {
-  const body = new URLSearchParams({
-    client_id: env.THREADS_CLIENT_ID,
-    client_secret: env.THREADS_CLIENT_SECRET,
-    grant_type: "authorization_code",
-    redirect_uri: env.THREADS_REDIRECT_URI,
-    code,
-  });
-
-  const response = await fetch(env.THREADS_TOKEN_URL, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/x-www-form-urlencoded",
-    },
-    body,
-  });
-
-  return fetchJsonOrThrow(
-    response,
-    shortLivedTokenSchema,
-    "Failed to exchange the Threads authorization code.",
-  );
-}
-
-async function exchangeForLongLivedToken(accessToken: string) {
-  const url = new URL("/access_token", new URL(env.THREADS_TOKEN_URL).origin);
-  url.searchParams.set("grant_type", "th_exchange_token");
-  url.searchParams.set("client_secret", env.THREADS_CLIENT_SECRET);
-  url.searchParams.set("access_token", accessToken);
-
-  const response = await fetch(url);
-
-  if (!response.ok) {
-    return null;
-  }
-
-  return fetchJsonOrThrow(
-    response,
-    longLivedTokenSchema,
-    "Failed to exchange a long-lived Threads token.",
-  );
-}
-
-async function fetchThreadsProfile(accessToken: string) {
-  const url = new URL(env.THREADS_USERINFO_URL);
-  url.searchParams.set("access_token", accessToken);
-
-  const response = await fetch(url);
-  return fetchJsonOrThrow(
-    response,
-    threadsProfileSchema,
-    "Failed to load the Threads profile.",
-  );
 }
 
 async function loadSessionUserById(client: DbClient, userId: string) {
@@ -282,20 +227,22 @@ async function loadSessionUserById(client: DbClient, userId: string) {
         u.id,
         u.display_name,
         u.email,
-        aa.provider_username AS threads_username,
+        u.seller_email_verified_at,
+        ${accountLoginIdSql("account")} AS login_id,
         ARRAY_REMOVE(ARRAY_AGG(DISTINCT ur.role::text), NULL) AS roles
       FROM users u
-      LEFT JOIN auth_accounts aa ON aa.user_id = u.id AND aa.provider = 'THREADS'
+      ${accountIdentityJoins("account", "u")}
       LEFT JOIN user_roles ur ON ur.user_id = u.id
       WHERE u.id = $1
-      GROUP BY u.id, aa.provider_username
+      GROUP BY u.id, ${accountLoginIdSql("account")}
     `,
-    [userId],
+    [userId]
   );
 
   const row = result.rows[0];
+
   if (!row) {
-    throw new AppError("Failed to load the logged-in user.", 500);
+    throw new AppError("로그인 사용자 정보를 불러오지 못했습니다.", 500);
   }
 
   return mapSessionUser(row);
@@ -310,7 +257,7 @@ async function createSessionForUserId(client: DbClient, userId: string) {
       INSERT INTO user_sessions (user_id, session_token_hash, expires_at)
       VALUES ($1, $2, $3)
     `,
-    [userId, hashSessionToken(sessionToken), expiresAt],
+    [userId, hashSessionToken(sessionToken), expiresAt]
   );
 
   await client.query(
@@ -320,21 +267,95 @@ async function createSessionForUserId(client: DbClient, userId: string) {
           updated_at = NOW()
       WHERE id = $1
     `,
-    [userId],
+    [userId]
   );
 
   return {
     user: await loadSessionUserById(client, userId),
     sessionToken,
-    expiresAt,
+    expiresAt
   };
 }
 
-export async function ensureSellerProfile(
-  client: DbClient,
-  userId: string,
-  displayName: string,
-) {
+async function isLoginIdTaken(client: DbClient, loginId: string) {
+  const result = await client.query(
+    `
+      SELECT 1
+      FROM (
+        SELECT login_id AS identity_value
+        FROM local_auth_credentials
+        UNION ALL
+        SELECT provider_username AS identity_value
+        FROM auth_accounts
+        WHERE provider = 'THREADS'
+      ) identities
+      WHERE LOWER(COALESCE(identity_value, '')) = LOWER($1)
+      LIMIT 1
+    `,
+    [loginId]
+  );
+
+  return Boolean(result.rows[0]);
+}
+
+async function isEmailTaken(client: DbClient, email: string) {
+  const result = await client.query(
+    `
+      SELECT 1
+      FROM users
+      WHERE LOWER(COALESCE(email, '')) = LOWER($1)
+      LIMIT 1
+    `,
+    [email]
+  );
+
+  return Boolean(result.rows[0]);
+}
+
+async function ensureSignupAvailability(client: DbClient, loginId: string, email?: string | null) {
+  if (await isLoginIdTaken(client, loginId)) {
+    throw new AppError("이미 사용 중인 Threads 아이디입니다.", 409, "LOGIN_ID_ALREADY_EXISTS");
+  }
+
+  if (email && (await isEmailTaken(client, email))) {
+    throw new AppError("이미 가입한 이메일입니다.", 409, "EMAIL_ALREADY_EXISTS");
+  }
+}
+
+async function assignBaseRoles(client: DbClient, userId: string, loginId: string, displayName: string) {
+  const normalizedLoginId = normalizeLoginId(loginId);
+  const roles = ["BUYER", ...(sellerApprovalAdminLoginId && normalizedLoginId === sellerApprovalAdminLoginId ? ["SELLER", "ADMIN"] : [])];
+
+  await client.query(
+    `
+      INSERT INTO user_roles (user_id, role)
+      SELECT $1, role_code
+      FROM UNNEST($2::role_code[]) AS role_code
+      ON CONFLICT DO NOTHING
+    `,
+    [userId, roles]
+  );
+
+  if (roles.includes("SELLER")) {
+    await ensureSellerProfile(client, userId, displayName);
+  }
+}
+
+async function syncAutoAdminRoles(client: DbClient, user: { id: string; login_id: string; display_name: string }) {
+  if (!sellerApprovalAdminLoginId || normalizeLoginId(user.login_id) !== sellerApprovalAdminLoginId) {
+    return;
+  }
+
+  await assignBaseRoles(client, user.id, user.login_id, user.display_name);
+}
+
+function generateVerificationCode() {
+  return randomInt(0, 1_000_000)
+    .toString()
+    .padStart(6, "0");
+}
+
+export async function ensureSellerProfile(client: DbClient, userId: string, displayName: string) {
   await client.query(
     `
       INSERT INTO seller_profiles (
@@ -347,114 +368,789 @@ export async function ensureSellerProfile(
       VALUES ($1, $2, 'TO_BE_UPDATED', 'TO_BE_UPDATED', 'TO_BE_UPDATED')
       ON CONFLICT (user_id) DO NOTHING
     `,
-    [userId, `${displayName} Shop`],
+    [userId, `${displayName} Shop`]
   );
 }
 
-async function createSessionForThreadsIdentity(identity: ThreadsIdentity) {
-  return withTransaction(async (client) => {
-    const normalizedUsername = normalizeThreadsUsername(identity.username);
-    const isApprovalAdmin =
-      Boolean(sellerApprovalAdminThreadsUserId) &&
-      identity.providerUserId === sellerApprovalAdminThreadsUserId;
-    const existingAuth = await client.query<{ user_id: string }>(
+async function createLocalAccount(
+  client: DbClient,
+  input: {
+    loginId: string;
+    displayName: string;
+    passwordHash: string;
+    email?: string | null;
+    sellerEmailVerifiedAt?: Date | null;
+  }
+) {
+  const insertedUser = await client.query<{ id: string }>(
+    `
+      INSERT INTO users (display_name, email, seller_email_verified_at, last_login_at)
+      VALUES ($1, $2, $3, NOW())
+      RETURNING id
+    `,
+    [input.displayName, input.email ?? null, input.sellerEmailVerifiedAt ?? null]
+  );
+
+  const userId = insertedUser.rows[0]?.id;
+
+  if (!userId) {
+    throw new AppError("회원가입 계정을 생성하지 못했습니다.", 500);
+  }
+
+  await client.query(
+    `
+      INSERT INTO local_auth_credentials (user_id, login_id, password_hash)
+      VALUES ($1, $2, $3)
+    `,
+    [userId, input.loginId, input.passwordHash]
+  );
+
+  await assignBaseRoles(client, userId, input.loginId, input.displayName);
+  return userId;
+}
+
+async function ensureEmailAvailableForUser(client: DbClient, userId: string, email: string) {
+  const result = await client.query(
+    `
+      SELECT 1
+      FROM users
+      WHERE LOWER(COALESCE(email, '')) = LOWER($1)
+        AND id <> $2
+      LIMIT 1
+    `,
+    [email, userId]
+  );
+
+  if (result.rows[0]) {
+    throw new AppError("이미 가입한 이메일입니다.", 409, "EMAIL_ALREADY_EXISTS");
+  }
+}
+
+async function loadSellerVerificationIdentity(client: DbClient, userId: string) {
+  const result = await client.query<SellerVerificationIdentityRow>(
+    `
+      SELECT
+        u.display_name,
+        ${accountLoginIdSql("account")} AS login_id
+      FROM users u
+      ${accountIdentityJoins("account", "u")}
+      WHERE u.id = $1
+      GROUP BY u.id, ${accountLoginIdSql("account")}
+    `,
+    [userId]
+  );
+
+  const row = result.rows[0];
+
+  if (!row) {
+    throw new AppError("로그인 사용자 정보를 불러오지 못했습니다.", 404);
+  }
+
+  return row;
+}
+
+async function findPasswordResetTarget(client: DbClient, loginId: string) {
+  const result = await client.query<PasswordResetTargetRow>(
+    `
+      SELECT
+        u.id AS user_id,
+        u.display_name,
+        u.email,
+        ${accountLoginIdSql("account")} AS login_id,
+        (account_local.user_id IS NOT NULL) AS has_local_password,
+        COALESCE(ARRAY_AGG(DISTINCT ur.role) FILTER (WHERE ur.role IS NOT NULL), '{}') AS roles
+      FROM users u
+      ${accountIdentityJoins("account", "u")}
+      LEFT JOIN user_roles ur
+        ON ur.user_id = u.id
+      WHERE LOWER(COALESCE(${accountLoginIdSql("account")}, '')) = LOWER($1)
+      GROUP BY u.id, ${accountLoginIdSql("account")}, account_local.user_id
+      LIMIT 1
+    `,
+    [loginId]
+  );
+
+  return result.rows[0] ?? null;
+}
+
+function isSellerPortalAccount(target: Pick<PasswordResetTargetRow, "roles">) {
+  return Boolean(target.roles?.some((role) => role === "SELLER" || role === "ADMIN"));
+}
+
+async function findLegacyActivationTarget(client: DbClient, loginId: string) {
+  const result = await client.query<LegacyActivationTargetRow>(
+    `
+      SELECT
+        u.id AS user_id,
+        u.display_name,
+        aa.provider_username AS login_id,
+        (lac.user_id IS NOT NULL) AS has_local_password
+      FROM users u
+      JOIN auth_accounts aa
+        ON aa.user_id = u.id
+       AND aa.provider = 'THREADS'
+      LEFT JOIN local_auth_credentials lac
+        ON lac.user_id = u.id
+      WHERE LOWER(COALESCE(aa.provider_username, '')) = LOWER($1)
+      LIMIT 1
+    `,
+    [loginId]
+  );
+
+  return result.rows[0] ?? null;
+}
+
+async function upsertLocalPassword(
+  client: DbClient,
+  input: {
+    userId: string;
+    loginId: string;
+    passwordHash: string;
+  }
+) {
+  await client.query(
+    `
+      INSERT INTO local_auth_credentials (user_id, login_id, password_hash, password_updated_at, updated_at)
+      VALUES ($1, $2, $3, NOW(), NOW())
+      ON CONFLICT (user_id) DO UPDATE
+      SET login_id = EXCLUDED.login_id,
+          password_hash = EXCLUDED.password_hash,
+          password_updated_at = NOW(),
+          updated_at = NOW()
+    `,
+    [input.userId, input.loginId, input.passwordHash]
+  );
+}
+
+export async function registerBuyerAccount(input: {
+  loginId: string;
+  displayName: string;
+  password: string;
+}) {
+  const loginId = normalizeLoginId(input.loginId);
+  const displayName = normalizeDisplayName(input.displayName);
+
+  if (input.password.length < 8 || input.password.length > 200) {
+    throw new AppError("비밀번호는 8자 이상 200자 이하로 입력해 주세요.", 400);
+  }
+
+  const passwordHash = await hashPassword(input.password);
+
+  try {
+    return await withTransaction(async (client) => {
+      await ensureSignupAvailability(client, loginId);
+      const userId = await createLocalAccount(client, {
+        loginId,
+        displayName,
+        passwordHash
+      });
+
+      return createSessionForUserId(client, userId);
+    });
+  } catch (error) {
+    if (isPgUniqueError(error)) {
+      throw new AppError("이미 가입이 완료된 계정입니다. 로그인해 주세요.", 409);
+    }
+
+    throw error;
+  }
+}
+
+export async function requestSignupVerification(input: {
+  loginId: string;
+  displayName: string;
+  email: string;
+  password: string;
+}) {
+  const loginId = normalizeLoginId(input.loginId);
+  const displayName = normalizeDisplayName(input.displayName);
+  const email = normalizeEmail(input.email);
+
+  if (input.password.length < 8 || input.password.length > 200) {
+    throw new AppError("비밀번호는 8자 이상 200자 이하로 입력해 주세요.", 400);
+  }
+
+  const passwordHash = await hashPassword(input.password);
+  const verificationCode = generateVerificationCode();
+  const verificationCodeHash = hashVerificationCode(verificationCode);
+  const expiresAt = new Date(Date.now() + env.SIGNUP_VERIFICATION_CODE_TTL_MINUTES * 60 * 1000);
+
+  await withTransaction(async (client) => {
+    await client.query("DELETE FROM signup_verification_requests WHERE code_expires_at < NOW()");
+    await ensureSignupAvailability(client, loginId, email);
+    await client.query(
       `
-        SELECT user_id
-        FROM auth_accounts
-        WHERE provider = 'THREADS'
-          AND (
-            LOWER(provider_user_id) = LOWER($1)
-            OR LOWER(COALESCE(provider_username, '')) = LOWER($2)
-          )
-        ORDER BY CASE
-          WHEN LOWER(provider_user_id) = LOWER($1) THEN 0
-          WHEN LOWER(COALESCE(provider_username, '')) = LOWER($2) THEN 1
-          ELSE 2
-        END
-        LIMIT 1
+        DELETE FROM signup_verification_requests
+        WHERE login_id = $1 OR email = $2
       `,
-      [identity.providerUserId, normalizedUsername],
+      [loginId, email]
+    );
+    await client.query(
+      `
+        INSERT INTO signup_verification_requests (
+          login_id,
+          display_name,
+          email,
+          password_hash,
+          verification_code_hash,
+          code_expires_at
+        )
+        VALUES ($1, $2, $3, $4, $5, $6)
+      `,
+      [loginId, displayName, email, passwordHash, verificationCodeHash, expiresAt]
+    );
+  });
+
+  await sendSignupVerificationCode({
+    email,
+    loginId,
+    displayName,
+    code: verificationCode
+  });
+}
+
+export async function verifySignupCode(input: {
+  loginId: string;
+  email: string;
+  code: string;
+}) {
+  const loginId = normalizeLoginId(input.loginId);
+  const email = normalizeEmail(input.email);
+  const code = normalizeVerificationCode(input.code);
+
+  try {
+    return await withTransaction(async (client) => {
+      const pendingResult = await client.query<PendingSignupRow>(
+        `
+          SELECT
+            id,
+            login_id,
+            display_name,
+            email,
+            password_hash,
+            verification_code_hash,
+            code_expires_at
+          FROM signup_verification_requests
+          WHERE login_id = $1 AND email = $2
+          FOR UPDATE
+        `,
+        [loginId, email]
+      );
+
+      const pending = pendingResult.rows[0];
+
+      if (!pending) {
+        throw new AppError("인증번호 요청 내역을 찾을 수 없습니다. 다시 인증번호를 요청해 주세요.", 404);
+      }
+
+      if (pending.code_expires_at.getTime() < Date.now()) {
+        await client.query("DELETE FROM signup_verification_requests WHERE id = $1", [pending.id]);
+        throw new AppError("인증번호가 만료되었습니다. 새 인증번호를 요청해 주세요.", 410);
+      }
+
+      if (!compareSecret(hashVerificationCode(code), pending.verification_code_hash)) {
+        throw new AppError("인증번호가 올바르지 않습니다.", 400, "INVALID_VERIFICATION_CODE");
+      }
+
+      await ensureSignupAvailability(client, loginId, email);
+      const userId = await createLocalAccount(client, {
+        loginId: pending.login_id,
+        displayName: pending.display_name,
+        passwordHash: pending.password_hash,
+        email: pending.email,
+        sellerEmailVerifiedAt: new Date()
+      });
+      await client.query("DELETE FROM signup_verification_requests WHERE id = $1", [pending.id]);
+
+      return createSessionForUserId(client, userId);
+    });
+  } catch (error) {
+    if (isPgUniqueError(error)) {
+      throw new AppError("이미 가입이 완료된 계정입니다. 로그인해 주세요.", 409);
+    }
+
+    throw error;
+  }
+}
+
+export async function requestSellerEmailVerification(userId: string, input: { email: string }) {
+  const email = normalizeEmail(input.email);
+  const verificationCode = generateVerificationCode();
+  const verificationCodeHash = hashVerificationCode(verificationCode);
+  const expiresAt = new Date(Date.now() + env.SIGNUP_VERIFICATION_CODE_TTL_MINUTES * 60 * 1000);
+
+  const identity = await withTransaction(async (client) => {
+    await client.query("DELETE FROM seller_email_verification_requests WHERE code_expires_at < NOW()");
+    await ensureEmailAvailableForUser(client, userId, email);
+
+    const currentUser = await loadSellerVerificationIdentity(client, userId);
+
+    await client.query(
+      `
+        INSERT INTO seller_email_verification_requests (
+          user_id,
+          email,
+          verification_code_hash,
+          code_expires_at,
+          updated_at
+        )
+        VALUES ($1, $2, $3, $4, NOW())
+        ON CONFLICT (user_id) DO UPDATE
+        SET email = EXCLUDED.email,
+            verification_code_hash = EXCLUDED.verification_code_hash,
+            code_expires_at = EXCLUDED.code_expires_at,
+            updated_at = NOW()
+      `,
+      [userId, email, verificationCodeHash, expiresAt]
     );
 
-    let userId = existingAuth.rows[0]?.user_id;
+    return currentUser;
+  });
 
-    if (userId) {
+  await sendSellerPortalVerificationCode({
+    email,
+    loginId: identity.login_id,
+    displayName: identity.display_name,
+    code: verificationCode
+  });
+}
+
+export async function verifySellerEmailVerification(userId: string, input: { code: string }) {
+  const code = normalizeVerificationCode(input.code);
+
+  try {
+    return await withTransaction(async (client) => {
+      const pendingResult = await client.query<PendingSellerEmailVerificationRow>(
+        `
+          SELECT
+            user_id,
+            email,
+            verification_code_hash,
+            code_expires_at
+          FROM seller_email_verification_requests
+          WHERE user_id = $1
+          FOR UPDATE
+        `,
+        [userId]
+      );
+
+      const pending = pendingResult.rows[0];
+
+      if (!pending) {
+        throw new AppError("인증번호 요청 내역을 찾을 수 없습니다. 다시 인증번호를 요청해 주세요.", 404);
+      }
+
+      if (pending.code_expires_at.getTime() < Date.now()) {
+        await client.query("DELETE FROM seller_email_verification_requests WHERE user_id = $1", [userId]);
+        throw new AppError("인증번호가 만료되었습니다. 새 인증번호를 요청해 주세요.", 410);
+      }
+
+      if (!compareSecret(hashVerificationCode(code), pending.verification_code_hash)) {
+        throw new AppError("인증번호가 올바르지 않습니다.", 400, "INVALID_VERIFICATION_CODE");
+      }
+
+      await ensureEmailAvailableForUser(client, userId, pending.email);
       await client.query(
         `
           UPDATE users
-          SET display_name = $2,
-              email = COALESCE($3, email),
-              profile_image_url = COALESCE($4, profile_image_url),
-              last_login_at = NOW(),
+          SET email = $2,
+              seller_email_verified_at = NOW(),
               updated_at = NOW()
           WHERE id = $1
         `,
-        [
-          userId,
-          identity.displayName,
-          identity.email ?? null,
-          identity.profileImageUrl ?? null,
-        ],
+        [userId, pending.email]
       );
+      await client.query("DELETE FROM seller_email_verification_requests WHERE user_id = $1", [userId]);
 
-      await client.query(
-        `
-          UPDATE auth_accounts
-          SET provider_user_id = $2,
-              provider_username = $3,
-              updated_at = NOW()
-          WHERE provider = 'THREADS' AND user_id = $1
-        `,
-        [userId, identity.providerUserId, normalizedUsername],
-      );
-    } else {
-      const insertedUser = await client.query<{ id: string }>(
-        `
-          INSERT INTO users (display_name, email, profile_image_url, last_login_at)
-          VALUES ($1, $2, $3, NOW())
-          RETURNING id
-        `,
-        [
-          identity.displayName,
-          identity.email ?? null,
-          identity.profileImageUrl ?? null,
-        ],
-      );
-
-      userId = insertedUser.rows[0]?.id;
-
-      if (!userId) {
-        throw new AppError("Failed to create the user account.", 500);
-      }
-
-      await client.query(
-        `
-          INSERT INTO auth_accounts (user_id, provider, provider_user_id, provider_username)
-          VALUES ($1, 'THREADS', $2, $3)
-        `,
-        [userId, identity.providerUserId, normalizedUsername],
-      );
+      return loadSessionUserById(client, userId);
+    });
+  } catch (error) {
+    if (isPgUniqueError(error)) {
+      throw new AppError("이미 가입한 이메일입니다.", 409, "EMAIL_ALREADY_EXISTS");
     }
 
-    const rolesToAssign = [
-      "BUYER",
-      ...(isApprovalAdmin ? ["SELLER", "ADMIN"] : []),
-    ];
+    throw error;
+  }
+}
+
+export async function requestPasswordReset(input: {
+  loginId: string;
+  email: string;
+  portal?: PasswordResetPortal;
+}) {
+  const loginId = normalizeLoginId(input.loginId);
+  const email = normalizeEmail(input.email);
+  const portal = input.portal ?? "SHOP";
+  const verificationCode = generateVerificationCode();
+  const verificationCodeHash = hashVerificationCode(verificationCode);
+  const expiresAt = new Date(Date.now() + env.SIGNUP_VERIFICATION_CODE_TTL_MINUTES * 60 * 1000);
+
+  const deliverable = await withTransaction(async (client) => {
+    await client.query("DELETE FROM password_reset_requests WHERE code_expires_at < NOW()");
+
+    const target = await findPasswordResetTarget(client, loginId);
+
+    if (!target) {
+      return null;
+    }
+
+    if (portal === "SHOP" && isSellerPortalAccount(target)) {
+      return null;
+    }
+
+    const isInitialBuyerPasswordSetup = portal === "SHOP" && !target.has_local_password && !target.email;
+    const hasMatchingStoredEmail = Boolean(target.email && target.email.toLowerCase() === email);
+
+    if (!isInitialBuyerPasswordSetup && !hasMatchingStoredEmail) {
+      return null;
+    }
+
+    if (isInitialBuyerPasswordSetup) {
+      await ensureEmailAvailableForUser(client, target.user_id, email);
+    }
+
     await client.query(
       `
-        INSERT INTO user_roles (user_id, role)
-        SELECT $1, role_code
-        FROM UNNEST($2::role_code[]) AS role_code
-        ON CONFLICT DO NOTHING
+        INSERT INTO password_reset_requests (
+          user_id,
+          email,
+          verification_code_hash,
+          code_expires_at,
+          updated_at
+        )
+        VALUES ($1, $2, $3, $4, NOW())
+        ON CONFLICT (user_id) DO UPDATE
+        SET email = EXCLUDED.email,
+            verification_code_hash = EXCLUDED.verification_code_hash,
+            code_expires_at = EXCLUDED.code_expires_at,
+            updated_at = NOW()
       `,
-      [userId, rolesToAssign],
+      [target.user_id, email, verificationCodeHash, expiresAt]
     );
 
-    if (isApprovalAdmin) {
-      await ensureSellerProfile(client, userId, identity.displayName);
+    return {
+      email,
+      loginId: target.login_id ?? loginId,
+      displayName: target.display_name,
+      code: verificationCode
+    };
+  });
+
+  if (!deliverable) {
+    return;
+  }
+
+  await sendPasswordResetCode(deliverable);
+}
+
+export async function requestLegacyAccountActivation(input: {
+  loginId: string;
+  email: string;
+  token?: string;
+}) {
+  verifyLegacyAccountActivationToken(input.token);
+
+  const loginId = normalizeLoginId(input.loginId);
+  const email = normalizeEmail(input.email);
+  const verificationCode = generateVerificationCode();
+  const verificationCodeHash = hashVerificationCode(verificationCode);
+  const expiresAt = new Date(Date.now() + env.SIGNUP_VERIFICATION_CODE_TTL_MINUTES * 60 * 1000);
+
+  const deliverable = await withTransaction(async (client) => {
+    await client.query("DELETE FROM legacy_account_activation_requests WHERE code_expires_at < NOW()");
+    const target = await findLegacyActivationTarget(client, loginId);
+
+    if (!target) {
+      throw new AppError(
+        "기존 Threads 계정을 찾지 못했습니다. 입력한 아이디를 다시 확인해 주세요.",
+        404,
+        "LEGACY_ACCOUNT_NOT_FOUND"
+      );
     }
 
-    return createSessionForUserId(client, userId);
+    if (target.has_local_password) {
+      throw new AppError(
+        "이미 비밀번호가 설정된 계정입니다. 일반 로그인 또는 비밀번호 재설정을 이용해 주세요.",
+        409,
+        "LOCAL_AUTH_ALREADY_EXISTS"
+      );
+    }
+
+    await ensureEmailAvailableForUser(client, target.user_id, email);
+    await client.query(
+      `
+        INSERT INTO legacy_account_activation_requests (
+          user_id,
+          email,
+          verification_code_hash,
+          code_expires_at,
+          updated_at
+        )
+        VALUES ($1, $2, $3, $4, NOW())
+        ON CONFLICT (user_id) DO UPDATE
+        SET email = EXCLUDED.email,
+            verification_code_hash = EXCLUDED.verification_code_hash,
+            code_expires_at = EXCLUDED.code_expires_at,
+            updated_at = NOW()
+      `,
+      [target.user_id, email, verificationCodeHash, expiresAt]
+    );
+
+    return {
+      email,
+      loginId: target.login_id,
+      displayName: target.display_name,
+      code: verificationCode
+    };
+  });
+
+  await sendLegacyAccountActivationCode(deliverable);
+}
+
+export async function verifyLegacyAccountActivation(input: {
+  loginId: string;
+  email: string;
+  code: string;
+  newPassword: string;
+  token?: string;
+}) {
+  verifyLegacyAccountActivationToken(input.token);
+
+  const loginId = normalizeLoginId(input.loginId);
+  const email = normalizeEmail(input.email);
+  const code = normalizeVerificationCode(input.code);
+  assertPasswordLength(input.newPassword);
+
+  const passwordHash = await hashPassword(input.newPassword);
+
+  return withTransaction(async (client) => {
+    const target = await findLegacyActivationTarget(client, loginId);
+
+    if (!target) {
+      throw new AppError(
+        "기존 Threads 계정을 찾지 못했습니다. 입력한 아이디를 다시 확인해 주세요.",
+        404,
+        "LEGACY_ACCOUNT_NOT_FOUND"
+      );
+    }
+
+    if (target.has_local_password) {
+      throw new AppError(
+        "이미 비밀번호가 설정된 계정입니다. 일반 로그인 또는 비밀번호 재설정을 이용해 주세요.",
+        409,
+        "LOCAL_AUTH_ALREADY_EXISTS"
+      );
+    }
+
+    const pendingResult = await client.query<LegacyActivationRequestRow>(
+      `
+        SELECT
+          user_id,
+          email,
+          verification_code_hash,
+          code_expires_at
+        FROM legacy_account_activation_requests
+        WHERE user_id = $1
+        FOR UPDATE
+      `,
+      [target.user_id]
+    );
+
+    const pending = pendingResult.rows[0];
+
+    if (!pending || pending.email.toLowerCase() !== email) {
+      throw new AppError(
+        "계정 전환 요청을 찾지 못했습니다. 인증번호를 다시 요청해 주세요.",
+        404,
+        "LEGACY_ACTIVATION_REQUEST_NOT_FOUND"
+      );
+    }
+
+    if (pending.code_expires_at.getTime() < Date.now()) {
+      await client.query("DELETE FROM legacy_account_activation_requests WHERE user_id = $1", [
+        target.user_id
+      ]);
+      throw new AppError("인증번호가 만료되었습니다. 다시 요청해 주세요.", 410);
+    }
+
+    if (!compareSecret(hashVerificationCode(code), pending.verification_code_hash)) {
+      throw new AppError("인증번호가 올바르지 않습니다.", 400, "INVALID_VERIFICATION_CODE");
+    }
+
+    await ensureEmailAvailableForUser(client, target.user_id, email);
+    await upsertLocalPassword(client, {
+      userId: target.user_id,
+      loginId,
+      passwordHash
+    });
+    await client.query(
+      `
+        UPDATE users
+        SET email = $2,
+            seller_email_verified_at = COALESCE(seller_email_verified_at, NOW()),
+            updated_at = NOW()
+        WHERE id = $1
+      `,
+      [target.user_id, email]
+    );
+    await client.query("DELETE FROM password_reset_requests WHERE user_id = $1", [target.user_id]);
+    await client.query("DELETE FROM seller_email_verification_requests WHERE user_id = $1", [
+      target.user_id
+    ]);
+    await client.query("DELETE FROM legacy_account_activation_requests WHERE user_id = $1", [
+      target.user_id
+    ]);
+    await syncAutoAdminRoles(client, {
+      id: target.user_id,
+      login_id: target.login_id,
+      display_name: target.display_name
+    });
+
+    return createSessionForUserId(client, target.user_id);
+  });
+}
+
+export async function verifyPasswordReset(input: {
+  loginId: string;
+  email: string;
+  code: string;
+  newPassword: string;
+  portal?: PasswordResetPortal;
+}) {
+  const loginId = normalizeLoginId(input.loginId);
+  const email = normalizeEmail(input.email);
+  const code = normalizeVerificationCode(input.code);
+  const portal = input.portal ?? "SHOP";
+
+  if (input.newPassword.length < 8 || input.newPassword.length > 200) {
+    throw new AppError("비밀번호는 8자 이상 200자 이하로 입력해 주세요.", 400);
+  }
+
+  const passwordHash = await hashPassword(input.newPassword);
+
+  return withTransaction(async (client) => {
+    const target = await findPasswordResetTarget(client, loginId);
+
+    if (!target) {
+      throw new AppError("비밀번호 재설정 요청을 찾을 수 없습니다. 다시 시도해 주세요.", 404);
+    }
+
+    if (portal === "SHOP" && isSellerPortalAccount(target)) {
+      throw new AppError("비밀번호 재설정 요청을 찾을 수 없습니다. 다시 시도해 주세요.", 404);
+    }
+
+    const isInitialBuyerPasswordSetup = portal === "SHOP" && !target.has_local_password && !target.email;
+    const hasMatchingStoredEmail = Boolean(target.email && target.email.toLowerCase() === email);
+
+    if (!isInitialBuyerPasswordSetup && !hasMatchingStoredEmail) {
+      throw new AppError("비밀번호 재설정 요청을 찾을 수 없습니다. 다시 시도해 주세요.", 404);
+    }
+
+    const pendingResult = await client.query<PasswordResetRequestRow>(
+      `
+        SELECT
+          user_id,
+          email,
+          verification_code_hash,
+          code_expires_at
+        FROM password_reset_requests
+        WHERE user_id = $1
+        FOR UPDATE
+      `,
+      [target.user_id]
+    );
+
+    const pending = pendingResult.rows[0];
+
+    if (!pending || pending.email.toLowerCase() !== email) {
+      throw new AppError("비밀번호 재설정 요청을 찾을 수 없습니다. 다시 시도해 주세요.", 404);
+    }
+
+    if (pending.code_expires_at.getTime() < Date.now()) {
+      await client.query("DELETE FROM password_reset_requests WHERE user_id = $1", [target.user_id]);
+      throw new AppError("인증번호가 만료되었습니다. 새 인증번호를 요청해 주세요.", 410);
+    }
+
+    if (!compareSecret(hashVerificationCode(code), pending.verification_code_hash)) {
+      throw new AppError("인증번호가 올바르지 않습니다.", 400, "INVALID_VERIFICATION_CODE");
+    }
+
+    await upsertLocalPassword(client, {
+      userId: target.user_id,
+      loginId,
+      passwordHash
+    });
+    await client.query(
+      `
+        UPDATE users
+        SET email = $2,
+            seller_email_verified_at = CASE
+              WHEN $3 THEN COALESCE(seller_email_verified_at, NOW())
+              ELSE seller_email_verified_at
+            END,
+            updated_at = NOW()
+        WHERE id = $1
+      `,
+      [target.user_id, email, portal === "ADMIN"]
+    );
+    await client.query("DELETE FROM password_reset_requests WHERE user_id = $1", [target.user_id]);
+
+    if (target.login_id) {
+      await syncAutoAdminRoles(client, {
+        id: target.user_id,
+        login_id: target.login_id,
+        display_name: target.display_name
+      });
+    }
+
+    return createSessionForUserId(client, target.user_id);
+  });
+}
+
+export async function loginWithPassword(input: { loginId: string; password: string }) {
+  const loginId = normalizeLoginId(input.loginId);
+
+  if (input.password.length < 1) {
+    throw new AppError("비밀번호를 입력해 주세요.", 400);
+  }
+
+  return withTransaction(async (client) => {
+    const accountResult = await client.query<LocalAccountRow>(
+      `
+        SELECT
+          u.id,
+          u.display_name,
+          u.email,
+          u.seller_email_verified_at,
+          u.is_active,
+          lac.login_id,
+          lac.password_hash
+        FROM local_auth_credentials lac
+        JOIN users u ON u.id = lac.user_id
+        WHERE LOWER(lac.login_id) = LOWER($1)
+        FOR UPDATE OF lac, u
+      `,
+      [loginId]
+    );
+
+    const account = accountResult.rows[0];
+
+    if (!account) {
+      throw new AppError("아이디 또는 비밀번호가 올바르지 않습니다.", 401, "INVALID_LOGIN");
+    }
+
+    if (!account.is_active) {
+      throw new AppError("비활성화된 계정입니다.", 403);
+    }
+
+    const isValidPassword = await verifyPassword(input.password, account.password_hash);
+
+    if (!isValidPassword) {
+      throw new AppError("아이디 또는 비밀번호가 올바르지 않습니다.", 401, "INVALID_LOGIN");
+    }
+
+    await syncAutoAdminRoles(client, account);
+    return createSessionForUserId(client, account.id);
   });
 }
 
@@ -466,24 +1162,13 @@ export async function getSessionUser(sessionToken?: string) {
   return getUserBySessionHash(hashSessionToken(sessionToken));
 }
 
-export function setSessionCookie(
-  response: Response,
-  sessionToken: string,
-  expiresAt: Date,
-) {
-  response.cookie(
-    env.SESSION_COOKIE_NAME,
-    sessionToken,
-    cookieOptions(expiresAt),
-  );
+export function setSessionCookie(response: Response, sessionToken: string, expiresAt: Date) {
+  response.cookie(env.SESSION_COOKIE_NAME, sessionToken, cookieOptions(expiresAt));
 }
 
 export function verifySellerApprovalAdminPassword(password: string) {
   if (!env.SELLER_APPROVAL_ADMIN_PASSWORD) {
-    throw new AppError(
-      "판매자 승인 관리자 비밀번호가 아직 설정되지 않았습니다.",
-      503,
-    );
+    throw new AppError("판매자 승인 관리자 비밀번호가 아직 설정되지 않았습니다.", 503);
   }
 
   if (!compareSecret(password, env.SELLER_APPROVAL_ADMIN_PASSWORD)) {
@@ -491,15 +1176,11 @@ export function verifySellerApprovalAdminPassword(password: string) {
   }
 }
 
-export function setSellerApprovalAuthCookie(
-  response: Response,
-  sessionToken: string,
-  userId: string,
-) {
+export function setSellerApprovalAuthCookie(response: Response, sessionToken: string, userId: string) {
   response.cookie(
     sellerApprovalAuthCookieName,
     getSellerApprovalCookieValue(sessionToken, userId),
-    cookieOptions(addDays(1)),
+    cookieOptions(addDays(1))
   );
 }
 
@@ -508,17 +1189,13 @@ export function hasSellerApprovalAuthCookie(input: {
   userId: string;
   cookieValue?: string;
 }) {
-  if (
-    !env.SELLER_APPROVAL_ADMIN_PASSWORD ||
-    !input.sessionToken ||
-    !input.cookieValue
-  ) {
+  if (!env.SELLER_APPROVAL_ADMIN_PASSWORD || !input.sessionToken || !input.cookieValue) {
     return false;
   }
 
   return compareSecret(
     input.cookieValue,
-    getSellerApprovalCookieValue(input.sessionToken, input.userId),
+    getSellerApprovalCookieValue(input.sessionToken, input.userId)
   );
 }
 
@@ -534,7 +1211,7 @@ export async function logout(sessionToken?: string) {
           updated_at = NOW()
       WHERE session_token_hash = $1
     `,
-    [hashSessionToken(sessionToken)],
+    [hashSessionToken(sessionToken)]
   );
 }
 
@@ -544,104 +1221,4 @@ export function clearSessionCookie(response: Response) {
 
 export function clearSellerApprovalAuthCookie(response: Response) {
   response.clearCookie(sellerApprovalAuthCookieName, cookieOptions());
-}
-
-export function clearThreadsOauthStateCookie(response: Response) {
-  response.clearCookie(threadsOauthStateCookieName, cookieOptions());
-}
-
-export function beginThreadsOauth(response: Response, returnTo?: string) {
-  if (!isThreadsOauthConfigured()) {
-    throw new AppError(
-      "Threads OAuth environment variables are not configured yet.",
-      501,
-    );
-  }
-
-  const oauthState = {
-    nonce: generateSessionToken(),
-    returnTo: normalizeReturnTo(returnTo),
-  };
-
-  response.cookie(
-    threadsOauthStateCookieName,
-    encodeOauthState(oauthState),
-    cookieOptions(new Date(Date.now() + 10 * 60 * 1000)),
-  );
-
-  const url = new URL(env.THREADS_AUTH_URL);
-  url.searchParams.set("client_id", env.THREADS_CLIENT_ID);
-  url.searchParams.set("redirect_uri", env.THREADS_REDIRECT_URI);
-  url.searchParams.set("response_type", "code");
-  url.searchParams.set("scope", "threads_basic");
-  url.searchParams.set("state", oauthState.nonce);
-  return url.toString();
-}
-
-export function getThreadsAuthFailureRedirect(
-  storedStateCookie?: string,
-  message?: string,
-) {
-  const storedState = readThreadsOauthState(storedStateCookie);
-  const loginUrl = getLoginPageUrl(storedState?.returnTo ?? null);
-
-  if (message) {
-    loginUrl.searchParams.set("error", message);
-  }
-
-  if (storedState?.returnTo) {
-    loginUrl.searchParams.set("return_to", storedState.returnTo);
-  }
-
-  return loginUrl.toString();
-}
-
-export async function completeThreadsOauth(input: {
-  code?: string;
-  state?: string;
-  storedStateCookie?: string;
-}) {
-  if (!isThreadsOauthConfigured()) {
-    throw new AppError(
-      "Threads OAuth environment variables are not configured yet.",
-      501,
-    );
-  }
-
-  const storedState = readThreadsOauthState(input.storedStateCookie);
-
-  if (!storedState) {
-    throw new AppError(
-      "The Threads login session expired. Please try again.",
-      400,
-    );
-  }
-
-  if (!input.state || storedState.nonce !== input.state) {
-    throw new AppError("The Threads login state could not be verified.", 400);
-  }
-
-  if (!input.code) {
-    throw new AppError("No Threads authorization code was returned.", 400);
-  }
-
-  const shortLivedToken = await exchangeCodeForShortLivedToken(input.code);
-  const longLivedToken = await exchangeForLongLivedToken(
-    shortLivedToken.access_token,
-  );
-  const accessToken =
-    longLivedToken?.access_token ?? shortLivedToken.access_token;
-  const profile = await fetchThreadsProfile(accessToken);
-
-  const session = await createSessionForThreadsIdentity({
-    providerUserId: profile.id,
-    username: profile.username,
-    displayName: profile.name || profile.username,
-    profileImageUrl: profile.threads_profile_picture_url || null,
-  });
-
-  return {
-    ...session,
-    redirectTo: storedState.returnTo,
-  };
 }

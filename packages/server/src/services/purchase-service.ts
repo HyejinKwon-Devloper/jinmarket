@@ -1,8 +1,11 @@
-﻿import { withTransaction } from "@jinmarket/db";
+import { withTransaction } from "../../../db/src/index.js";
 import type { GamePlayResult, OrderRecord } from "@jinmarket/shared";
 
 import { AppError, isPgUniqueError } from "../errors.js";
 import { decideRpsResult, randomChoice } from "../utils/rps.js";
+
+import { accountIdentityJoins, accountLoginIdSql } from "./account-sql.js";
+import { sendSellerOrderNotification } from "./mail-service.js";
 
 type LockedProductRow = {
   id: string;
@@ -21,6 +24,7 @@ type OrderRow = {
   product_title: string;
   seller_id: string;
   seller_display_name: string;
+  seller_email: string | null;
   seller_threads_username: string | null;
   buyer_id: string;
   buyer_display_name: string;
@@ -71,8 +75,30 @@ function assertProductOnSale(product: LockedProductRow) {
   }
 }
 
+function orderSourceLabel(source: OrderRow["source"]) {
+  return source === "GAME_CHANCE_WIN" ? "가위바위보 승리" : "즉시 구매";
+}
+
+async function notifySellerOrder(row: OrderRow, isFreeShare: boolean) {
+  try {
+    await sendSellerOrderNotification({
+      sellerEmail: row.seller_email,
+      sellerDisplayName: row.seller_display_name,
+      sellerLoginId: row.seller_threads_username,
+      buyerDisplayName: row.buyer_display_name,
+      buyerLoginId: row.buyer_threads_username,
+      productTitle: row.product_title,
+      orderTypeLabel: orderSourceLabel(row.source),
+      orderedAt: row.ordered_at.toISOString(),
+      isFreeShare
+    });
+  } catch (error) {
+    console.error("Failed to send seller order notification", error);
+  }
+}
+
 export async function purchaseInstantProduct(userId: string, productId: string) {
-  return withTransaction(async (client) => {
+  const result = await withTransaction(async (client) => {
     const productResult = await client.query<LockedProductRow>(
       `
         SELECT
@@ -125,18 +151,22 @@ export async function purchaseInstantProduct(userId: string, productId: string) 
             $4::text AS product_title,
             inserted.seller_id,
             seller.display_name AS seller_display_name,
-            seller_auth.provider_username AS seller_threads_username,
+            CASE
+              WHEN seller.seller_email_verified_at IS NOT NULL THEN seller.email
+              ELSE NULL
+            END AS seller_email,
+            ${accountLoginIdSql("seller")} AS seller_threads_username,
             inserted.buyer_id,
             buyer.display_name AS buyer_display_name,
-            buyer_auth.provider_username AS buyer_threads_username,
+            ${accountLoginIdSql("buyer")} AS buyer_threads_username,
             inserted.source,
             inserted.status,
             inserted.ordered_at
           FROM inserted
           JOIN users seller ON seller.id = inserted.seller_id
           JOIN users buyer ON buyer.id = inserted.buyer_id
-          LEFT JOIN auth_accounts seller_auth ON seller_auth.user_id = seller.id AND seller_auth.provider = 'THREADS'
-          LEFT JOIN auth_accounts buyer_auth ON buyer_auth.user_id = buyer.id AND buyer_auth.provider = 'THREADS'
+          ${accountIdentityJoins("seller")}
+          ${accountIdentityJoins("buyer")}
         `,
         [product.id, product.seller_id, userId, product.title]
       );
@@ -153,7 +183,7 @@ export async function purchaseInstantProduct(userId: string, productId: string) 
       );
 
       return {
-        order: mapOrder(orderResult.rows[0]),
+        orderRow: orderResult.rows[0],
         isFreeShare: product.is_free_share
       };
     } catch (error) {
@@ -164,6 +194,13 @@ export async function purchaseInstantProduct(userId: string, productId: string) 
       throw error;
     }
   });
+
+  await notifySellerOrder(result.orderRow, result.isFreeShare);
+
+  return {
+    order: mapOrder(result.orderRow),
+    isFreeShare: result.isFreeShare
+  };
 }
 
 export async function playGamePurchase(
@@ -171,7 +208,7 @@ export async function playGamePurchase(
   productId: string,
   playerChoice: "ROCK" | "PAPER" | "SCISSORS"
 ): Promise<GamePlayResult> {
-  return withTransaction(async (client) => {
+  const result = await withTransaction(async (client) => {
     const productResult = await client.query<LockedProductRow>(
       `
         SELECT
@@ -203,11 +240,11 @@ export async function playGamePurchase(
     assertProductOnSale(product);
 
     if (product.purchase_type !== "GAME_CHANCE") {
-      throw new AppError("게임 도전 상품이 아닙니다.", 400);
+      throw new AppError("게임 추첨 상품이 아닙니다.", 400);
     }
 
     if (product.seller_id === userId) {
-      throw new AppError("본인이 등록한 상품에는 도전할 수 없습니다.", 400);
+      throw new AppError("본인이 등록한 상품에는 참여할 수 없습니다.", 400);
     }
 
     const existingAttempt = await client.query(
@@ -220,7 +257,7 @@ export async function playGamePurchase(
     );
 
     if (existingAttempt.rows[0]) {
-      throw new AppError("이 상품에는 이미 가위바위보 도전을 완료했습니다.", 409);
+      throw new AppError("이 상품에는 이미 가위바위보 참여를 완료했습니다.", 409);
     }
 
     const systemChoice = randomChoice();
@@ -255,11 +292,11 @@ export async function playGamePurchase(
     if (result !== "WIN") {
       return {
         attempt: mappedAttempt,
-        purchased: false,
+        purchased: false as const,
         message:
           result === "DRAW"
-            ? "비겼습니다. 현재 정책상 무승부도 구매 실패로 처리됩니다."
-            : "아쉽지만 이번 도전은 실패했습니다."
+            ? "비겼습니다. 현재 정책상 무승부는 구매 실패로 처리됩니다."
+            : "아쉽지만 이번 게임은 실패했습니다."
       };
     }
 
@@ -277,18 +314,22 @@ export async function playGamePurchase(
             $5::text AS product_title,
             inserted.seller_id,
             seller.display_name AS seller_display_name,
-            seller_auth.provider_username AS seller_threads_username,
+            CASE
+              WHEN seller.seller_email_verified_at IS NOT NULL THEN seller.email
+              ELSE NULL
+            END AS seller_email,
+            ${accountLoginIdSql("seller")} AS seller_threads_username,
             inserted.buyer_id,
             buyer.display_name AS buyer_display_name,
-            buyer_auth.provider_username AS buyer_threads_username,
+            ${accountLoginIdSql("buyer")} AS buyer_threads_username,
             inserted.source,
             inserted.status,
             inserted.ordered_at
           FROM inserted
           JOIN users seller ON seller.id = inserted.seller_id
           JOIN users buyer ON buyer.id = inserted.buyer_id
-          LEFT JOIN auth_accounts seller_auth ON seller_auth.user_id = seller.id AND seller_auth.provider = 'THREADS'
-          LEFT JOIN auth_accounts buyer_auth ON buyer_auth.user_id = buyer.id AND buyer_auth.provider = 'THREADS'
+          ${accountIdentityJoins("seller")}
+          ${accountIdentityJoins("buyer")}
         `,
         [product.id, product.seller_id, userId, attemptResult.rows[0].id, product.title]
       );
@@ -306,10 +347,11 @@ export async function playGamePurchase(
 
       return {
         attempt: mappedAttempt,
-        purchased: true,
-        order: mapOrder(orderResult.rows[0]),
+        purchased: true as const,
+        orderRow: orderResult.rows[0],
+        isFreeShare: product.is_free_share,
         message: product.is_free_share
-          ? "가위바위보에 승리해 무료 나눔 신청이 완료되었습니다. 판매자가 전달 방법 안내를 위해 직접 연락할 예정입니다."
+          ? "가위바위보에 승리해 무료 나눔 요청이 완료되었습니다. 판매자가 전달 방법 안내를 위해 직접 연락할 예정입니다."
           : "가위바위보에 승리해 구매가 완료되었습니다. 판매자가 계좌이체 안내를 위해 직접 연락할 예정입니다."
       };
     } catch (error) {
@@ -320,4 +362,17 @@ export async function playGamePurchase(
       throw error;
     }
   });
+
+  if (!result.purchased) {
+    return result;
+  }
+
+  await notifySellerOrder(result.orderRow, result.isFreeShare);
+
+  return {
+    attempt: result.attempt,
+    purchased: true,
+    order: mapOrder(result.orderRow),
+    message: result.message
+  };
 }

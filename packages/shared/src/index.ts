@@ -31,6 +31,7 @@ export interface SessionUser {
   id: string;
   displayName: string;
   email: string | null;
+  sellerEmailVerifiedAt: string | null;
   threadsUsername: string | null;
   roles: string[];
 }

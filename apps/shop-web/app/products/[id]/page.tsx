@@ -140,7 +140,7 @@ export default function ProductDetailPage() {
         <ProductImageCarousel title={item.title} images={item.images} fallbackUrl={item.primaryImageUrl} />
       </div>
 
-      <div className="panel">
+      <div className="panel detailInfoPanel">
         <div className="badgeRow">
           <span className={`badge ${isOpen ? "success" : ""}`}>{statusLabel(item.status)}</span>
           <span className="badge">{purchaseTypeLabel(item.purchaseType)}</span>
@@ -149,16 +149,27 @@ export default function ProductDetailPage() {
           {item.allowPriceOffer ? <span className="badge">가격 제안 가능</span> : null}
         </div>
 
-        <h1>{item.title}</h1>
-        {item.sellerDisplayName ? (
-          <p className="muted">출품자 {item.sellerDisplayName}</p>
-        ) : (
-          <p className="muted">익명 등록 상품입니다.</p>
-        )}
-        <p className="priceText">{formatPrice(item.priceKrw)}</p>
-        <p>{item.description || "상품 설명이 아직 등록되지 않았습니다."}</p>
-        <p className="muted">판매 기간: {formatSaleWindow(item)}</p>
-        <p className="muted">{contactMessage}</p>
+        <div className="detailTextStack">
+          <h1>{item.title}</h1>
+          {item.sellerDisplayName ? (
+            <p className="muted">출품자 {item.sellerDisplayName}</p>
+          ) : (
+            <p className="muted">익명 등록 상품입니다.</p>
+          )}
+          <p className="priceText">{formatPrice(item.priceKrw)}</p>
+          <p>{item.description || "상품 설명이 아직 등록되지 않았습니다."}</p>
+        </div>
+
+        <div className="detailMetaCards">
+          <div className="detailMetaCard">
+            <span className="detailMetaLabel">판매 기간</span>
+            <span>{formatSaleWindow(item)}</span>
+          </div>
+          <div className="detailMetaCard">
+            <span className="detailMetaLabel">거래 안내</span>
+            <span>{contactMessage}</span>
+          </div>
+        </div>
 
         {!user ? <div className="message">로그인하면 바로 신청하거나 가위바위보 도전을 진행할 수 있습니다.</div> : null}
 
@@ -253,15 +264,17 @@ export default function ProductDetailPage() {
                   {isSubmittingOffer ? "제안 전송 중..." : "가격 제안하기"}
                 </button>
                 {showOfferForm ? (
-                  <div className="panel" style={{ marginTop: 12, padding: 18 }}>
+                  <div className="panel detailInlinePanel">
                     <div className="field">
                       <label>제안 가격</label>
                         <input
                           className="input"
-                          type="number"
+                          type="text"
+                          inputMode="numeric"
+                          pattern="[0-9]*"
                           disabled={isSubmittingOffer}
                           value={offeredPriceKrw}
-                          onChange={(event) => setOfferedPriceKrw(event.target.value)}
+                          onChange={(event) => setOfferedPriceKrw(event.target.value.replace(/\D/g, ""))}
                         />
                     </div>
                     <div className="field">

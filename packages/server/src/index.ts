@@ -13,19 +13,24 @@ import {
 import { AppError } from "./errors.js";
 import { allowedOrigins, env } from "./env.js";
 import {
-  beginThreadsOauth,
   clearSellerApprovalAuthCookie,
   clearSessionCookie,
-  clearThreadsOauthStateCookie,
-  completeThreadsOauth,
   getSessionUser,
-  getThreadsAuthFailureRedirect,
   hasSellerApprovalAuthCookie,
+  loginWithPassword,
   logout,
+  registerBuyerAccount,
+  requestLegacyAccountActivation,
+  requestPasswordReset,
+  requestSignupVerification,
+  requestSellerEmailVerification,
   sellerApprovalAuthCookieName,
   setSessionCookie,
   setSellerApprovalAuthCookie,
-  threadsOauthStateCookieName,
+  verifyLegacyAccountActivation,
+  verifyPasswordReset,
+  verifySellerEmailVerification,
+  verifySignupCode,
   verifySellerApprovalAdminPassword
 } from "./services/auth-service.js";
 import {
@@ -64,6 +69,68 @@ const sellerApprovalPasswordSchema = z.object({
   password: z.string().min(1).max(200)
 });
 
+const loginSchema = z.object({
+  loginId: z.string().trim().min(2).max(120),
+  password: z.string().min(1).max(200)
+});
+
+const buyerSignupSchema = z.object({
+  loginId: z.string().trim().min(2).max(120),
+  displayName: z.string().trim().min(2).max(60),
+  password: z.string().min(8).max(200)
+});
+
+const signupRequestSchema = z.object({
+  loginId: z.string().trim().min(2).max(120),
+  displayName: z.string().trim().min(2).max(60),
+  email: z.string().trim().email().max(255),
+  password: z.string().min(8).max(200)
+});
+
+const signupVerifySchema = z.object({
+  loginId: z.string().trim().min(2).max(120),
+  email: z.string().trim().email().max(255),
+  code: z.string().trim().regex(/^\d{6}$/)
+});
+
+const sellerEmailRequestSchema = z.object({
+  email: z.string().trim().email().max(255)
+});
+
+const sellerEmailVerifySchema = z.object({
+  code: z.string().trim().regex(/^\d{6}$/)
+});
+
+const passwordResetPortalSchema = z.enum(["SHOP", "ADMIN"]).default("SHOP");
+
+const passwordResetRequestSchema = z.object({
+  loginId: z.string().trim().min(2).max(120),
+  email: z.string().trim().email().max(255),
+  portal: passwordResetPortalSchema
+});
+
+const passwordResetVerifySchema = z.object({
+  loginId: z.string().trim().min(2).max(120),
+  email: z.string().trim().email().max(255),
+  code: z.string().trim().regex(/^\d{6}$/),
+  newPassword: z.string().min(8).max(200),
+  portal: passwordResetPortalSchema
+});
+
+const legacyAccountActivationSchema = z.object({
+  loginId: z.string().trim().min(2).max(120),
+  email: z.string().trim().email().max(255),
+  token: z.string().trim().min(1).max(255).optional()
+});
+
+const legacyAccountActivationVerifySchema = z.object({
+  loginId: z.string().trim().min(2).max(120),
+  email: z.string().trim().email().max(255),
+  code: z.string().trim().regex(/^\d{6}$/),
+  newPassword: z.string().min(8).max(200),
+  token: z.string().trim().min(1).max(255).optional()
+});
+
 async function attachSessionUser(request: AuthedRequest, _response: Response, next: NextFunction) {
   try {
     request.sessionUser = await getSessionUser(request.cookies?.[env.SESSION_COOKIE_NAME]);
@@ -85,8 +152,22 @@ function isApprovalAdmin(user: NonNullable<AuthedRequest["sessionUser"]>) {
   return user.roles.includes("ADMIN");
 }
 
-function requireSellerAccess(request: AuthedRequest) {
+function requireSellerPortalVerified(request: AuthedRequest) {
   const user = requireAuth(request);
+
+  if (!user.sellerEmailVerifiedAt) {
+    throw new AppError(
+      "판매자 사이트 이용 전 이메일 인증이 필요합니다.",
+      403,
+      "SELLER_EMAIL_VERIFICATION_REQUIRED"
+    );
+  }
+
+  return user;
+}
+
+function requireSellerAccess(request: AuthedRequest) {
+  const user = requireSellerPortalVerified(request);
 
   if (user.roles.includes("SELLER") || isApprovalAdmin(user)) {
     return user;
@@ -96,7 +177,7 @@ function requireSellerAccess(request: AuthedRequest) {
 }
 
 function requireApprovalAdmin(request: AuthedRequest) {
-  const user = requireAuth(request);
+  const user = requireSellerPortalVerified(request);
 
   if (isApprovalAdmin(user)) {
     const sessionToken = request.cookies?.[env.SESSION_COOKIE_NAME];
@@ -177,58 +258,88 @@ export function createApp() {
     response.json({ ok: true });
   });
 
-  app.get("/auth/threads/login", (request, response) => {
-    try {
-      const returnTo = getOptionalString(request.query.return_to);
-      response.redirect(beginThreadsOauth(response, returnTo));
-    } catch (error) {
-      const message = error instanceof Error ? error.message : "Threads 로그인 연결에 실패했습니다.";
-      response.redirect(getThreadsAuthFailureRedirect(undefined, message));
-    }
+  app.get("/auth/threads/login", () => {
+    throw new AppError("Threads OAuth 로그인은 더 이상 지원하지 않습니다.", 410);
   });
 
-  app.get(
-    "/auth/callback",
+  app.get("/auth/callback", () => {
+    throw new AppError("Threads OAuth 로그인은 더 이상 지원하지 않습니다.", 410);
+  });
+
+  app.post(
+    "/auth/login",
     asyncHandler(async (request, response) => {
-      const storedStateCookie = request.cookies?.[threadsOauthStateCookieName];
-      const oauthError =
-        getOptionalString(request.query.error_message) ??
-        getOptionalString(request.query.error_description) ??
-        getOptionalString(request.query.error);
-
-      if (oauthError) {
-        clearThreadsOauthStateCookie(response);
-        response.redirect(getThreadsAuthFailureRedirect(storedStateCookie, oauthError));
-        return;
-      }
-
-      try {
-        const result = await completeThreadsOauth({
-          code: getOptionalString(request.query.code),
-          state: getOptionalString(request.query.state),
-          storedStateCookie
-        });
-
-        clearThreadsOauthStateCookie(response);
-        setSessionCookie(response, result.sessionToken, result.expiresAt);
-        response.redirect(result.redirectTo);
-      } catch (error) {
-        console.error("Threads OAuth callback failed.", error);
-        clearThreadsOauthStateCookie(response);
-        const message = error instanceof Error ? error.message : "Threads 로그인에 실패했습니다.";
-        response.redirect(getThreadsAuthFailureRedirect(storedStateCookie, message));
-      }
+      const parsed = loginSchema.parse(request.body);
+      const session = await loginWithPassword(parsed);
+      setSessionCookie(response, session.sessionToken, session.expiresAt);
+      response.json({
+        user: session.user,
+        message: "로그인되었습니다."
+      });
     })
   );
 
   app.post(
-    "/auth/login",
-    asyncHandler(async () => {
-      throw new AppError(
-        "로컬 비밀번호 로그인은 종료되었습니다. Threads로 로그인해 주세요.",
-        410,
-        "THREADS_AUTH_REQUIRED"
-      );
+    "/auth/register",
+    asyncHandler(async (request, response) => {
+      const parsed = buyerSignupSchema.parse(request.body);
+      const session = await registerBuyerAccount(parsed);
+      setSessionCookie(response, session.sessionToken, session.expiresAt);
+      response.status(201).json({
+        user: session.user,
+        message: "회원가입이 완료되었습니다."
+      });
+    })
+  );
+
+  app.post(
+    "/auth/register/request-code",
+    asyncHandler(async (request, response) => {
+      const parsed = signupRequestSchema.parse(request.body);
+      await requestSignupVerification(parsed);
+      response.status(201).json({
+        ok: true,
+        message: "인증번호를 이메일로 보냈습니다. 메일함에서 6자리 코드를 확인해 주세요."
+      });
+    })
+  );
+
+  app.post(
+    "/auth/register/verify",
+    asyncHandler(async (request, response) => {
+      const parsed = signupVerifySchema.parse(request.body);
+      const session = await verifySignupCode(parsed);
+      setSessionCookie(response, session.sessionToken, session.expiresAt);
+      response.status(201).json({
+        user: session.user,
+        message: "이메일 인증이 완료되어 회원가입이 처리되었습니다."
+      });
+    })
+  );
+
+  app.post(
+    "/auth/seller-email/request-code",
+    asyncHandler(async (request, response) => {
+      const user = requireAuth(request);
+      const parsed = sellerEmailRequestSchema.parse(request.body);
+      await requestSellerEmailVerification(user.id, parsed);
+      response.status(201).json({
+        ok: true,
+        message: "인증번호를 이메일로 보냈습니다. 메일함에서 6자리 코드를 확인해 주세요."
+      });
+    })
+  );
+
+  app.post(
+    "/auth/seller-email/verify",
+    asyncHandler(async (request, response) => {
+      const user = requireAuth(request);
+      const parsed = sellerEmailVerifySchema.parse(request.body);
+      const verifiedUser = await verifySellerEmailVerification(user.id, parsed);
+      response.status(201).json({
+        user: verifiedUser,
+        message: "판매자 사이트 이메일 인증이 완료되었습니다."
+      });
     })
   );
 
@@ -242,22 +353,57 @@ export function createApp() {
   app.post(
     "/auth/password/setup",
     asyncHandler(async () => {
-      throw new AppError(
-        "로컬 비밀번호 설정은 종료되었습니다. Threads로 로그인해 주세요.",
-        410,
-        "THREADS_AUTH_REQUIRED"
-      );
+      throw new AppError("비밀번호 설정 변경 기능은 아직 제공되지 않습니다.", 410);
     })
   );
 
   app.post(
-    "/auth/password/reset",
-    asyncHandler(async () => {
-      throw new AppError(
-        "로컬 비밀번호 재설정은 종료되었습니다. Threads로 로그인해 주세요.",
-        410,
-        "THREADS_AUTH_REQUIRED"
-      );
+    "/auth/password/reset/request-code",
+    asyncHandler(async (request, response) => {
+      const parsed = passwordResetRequestSchema.parse(request.body);
+      await requestPasswordReset(parsed);
+      response.status(201).json({
+        ok: true,
+        message: "입력한 정보가 일치하면 인증번호를 이메일로 보냈습니다."
+      });
+    })
+  );
+
+  app.post(
+    "/auth/password/reset/verify",
+    asyncHandler(async (request, response) => {
+      const parsed = passwordResetVerifySchema.parse(request.body);
+      const session = await verifyPasswordReset(parsed);
+      setSessionCookie(response, session.sessionToken, session.expiresAt);
+      response.status(201).json({
+        user: session.user,
+        message: "비밀번호가 재설정되었습니다."
+      });
+    })
+  );
+
+  app.post(
+    "/auth/legacy-activate/request-code",
+    asyncHandler(async (request, response) => {
+      const parsed = legacyAccountActivationSchema.parse(request.body);
+      await requestLegacyAccountActivation(parsed);
+      response.status(201).json({
+        ok: true,
+        message: "인증번호를 이메일로 보냈습니다. 메일함에서 6자리 코드를 확인해 주세요."
+      });
+    })
+  );
+
+  app.post(
+    "/auth/legacy-activate/verify",
+    asyncHandler(async (request, response) => {
+      const parsed = legacyAccountActivationVerifySchema.parse(request.body);
+      const session = await verifyLegacyAccountActivation(parsed);
+      setSessionCookie(response, session.sessionToken, session.expiresAt);
+      response.status(201).json({
+        user: session.user,
+        message: "기존 계정 전환이 완료되었습니다. 이제 아이디와 비밀번호로 로그인할 수 있습니다."
+      });
     })
   );
 
@@ -271,7 +417,7 @@ export function createApp() {
   app.get(
     "/admin/seller-access/me",
     asyncHandler(async (request, response) => {
-      const user = requireAuth(request);
+      const user = requireSellerPortalVerified(request);
       response.json(await getSellerAccessOverview(user));
     })
   );
@@ -279,7 +425,7 @@ export function createApp() {
   app.post(
     "/admin/seller-access/me/request",
     asyncHandler(async (request, response) => {
-      const user = requireAuth(request);
+      const user = requireSellerPortalVerified(request);
       const item = await createSellerAccessRequest(user);
       response.status(201).json({
         item,
@@ -291,7 +437,7 @@ export function createApp() {
   app.get(
     "/admin/seller-access/auth",
     asyncHandler(async (request, response) => {
-      const user = requireAuth(request);
+      const user = requireSellerPortalVerified(request);
 
       if (!isApprovalAdmin(user)) {
         response.json({ eligible: false, verified: false });
@@ -312,7 +458,7 @@ export function createApp() {
   app.post(
     "/admin/seller-access/auth",
     asyncHandler(async (request, response) => {
-      const user = requireAuth(request);
+      const user = requireSellerPortalVerified(request);
 
       if (!isApprovalAdmin(user)) {
         throw new AppError("관리자 계정만 판매자 승인 목록을 관리할 수 있습니다.", 403);

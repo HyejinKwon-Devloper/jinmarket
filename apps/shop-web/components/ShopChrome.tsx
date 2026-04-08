@@ -9,7 +9,7 @@ import { fetchCurrentUser, requestJson } from "../lib/api";
 const defaultAdminAppUrl =
   process.env.NODE_ENV === "production"
     ? "https://management.jinmarket.shop"
-    : "https://jinmarket.test:3001";
+    : "https://jinmarket.test:3200";
 const adminAppUrl = process.env.NEXT_PUBLIC_ADMIN_APP_URL ?? defaultAdminAppUrl;
 
 export function ShopChrome({ children }: { children: React.ReactNode }) {

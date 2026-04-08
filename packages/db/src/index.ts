@@ -3,9 +3,19 @@ import { Pool, type PoolClient, type QueryResultRow } from "pg";
 import { fileURLToPath } from "node:url";
 
 if (!process.env.VERCEL) {
-  config({
-    path: fileURLToPath(new URL("../../../.env", import.meta.url))
-  });
+  const nodeEnv = process.env.NODE_ENV?.trim() || "development";
+  const envFiles = [
+    `../../../.env.${nodeEnv}.local`,
+    "../../../.env.local",
+    `../../../.env.${nodeEnv}`,
+    "../../../.env"
+  ];
+
+  for (const envFile of envFiles) {
+    config({
+      path: fileURLToPath(new URL(envFile, import.meta.url))
+    });
+  }
 }
 
 declare global {
@@ -19,11 +29,41 @@ if (!connectionString) {
   throw new Error("DATABASE_URL is required.");
 }
 
+if (/db\.example\.supabase\.co/i.test(connectionString) || /example\.com/i.test(connectionString)) {
+  throw new Error(
+    "DATABASE_URL is still using an example host. Replace it with your real database connection string."
+  );
+}
+
+function normalizeConnectionString(input: string) {
+  try {
+    return new URL(input).toString();
+  } catch {
+    return input;
+  }
+}
+
+function shouldUseSsl(input: string) {
+  try {
+    const parsed = new URL(input);
+    const sslmode = parsed.searchParams.get("sslmode")?.toLowerCase();
+    const isSupabaseHost =
+      parsed.hostname.endsWith(".supabase.co") || parsed.hostname.endsWith(".pooler.supabase.com");
+
+    return Boolean(
+      isSupabaseHost ||
+        (sslmode && ["require", "verify-ca", "verify-full", "prefer"].includes(sslmode))
+    );
+  } catch {
+    return input.includes("sslmode=require");
+  }
+}
+
 const pool =
   globalThis.__jinmarketPool__ ??
   new Pool({
-    connectionString,
-    ssl: connectionString.includes("sslmode=require") ? { rejectUnauthorized: false } : undefined
+    connectionString: normalizeConnectionString(connectionString),
+    ssl: shouldUseSsl(connectionString) ? { rejectUnauthorized: false } : undefined
   });
 
 if (!globalThis.__jinmarketPool__) {

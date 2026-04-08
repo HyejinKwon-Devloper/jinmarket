@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import { useEffect, useState } from "react";
 import type { OrderRecord, SellerAccessOverview, SessionUser } from "@jinmarket/shared";
@@ -14,6 +14,23 @@ function orderSourceLabel(source: OrderRecord["source"]) {
       return "가위바위보 승리";
     default:
       return "즉시 구매";
+  }
+}
+
+function orderStatusLabel(status: OrderRecord["status"]) {
+  switch (status) {
+    case "PENDING_CONTACT":
+      return "연락 대기";
+    case "CONTACTED":
+      return "연락 완료";
+    case "TRANSFER_PENDING":
+      return "입금 대기";
+    case "COMPLETED":
+      return "구매 완료";
+    case "CANCELLED":
+      return "취소됨";
+    default:
+      return status;
   }
 }
 
@@ -119,28 +136,32 @@ export default function AdminOrdersPage() {
       ) : null}
       {canViewOrders && items.length === 0 ? <p className="muted">아직 구매 완료된 주문이 없습니다.</p> : null}
       {canViewOrders && items.length > 0 ? (
-        <table className="table">
-          <thead>
-            <tr>
-              <th>상품</th>
-              <th>구매자</th>
-              <th>구매 방식</th>
-              <th>상태</th>
-              <th>주문 시간</th>
-            </tr>
-          </thead>
-          <tbody>
-            {items.map((item) => (
-              <tr key={item.id}>
-                <td>{item.productTitle}</td>
-                <td>{buyerLabel(item)}</td>
-                <td>{orderSourceLabel(item.source)}</td>
-                <td>{item.status}</td>
-                <td>{new Date(item.orderedAt).toLocaleString("ko-KR")}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+        <div className="adminOrdersList">
+          {items.map((item) => (
+            <article key={item.id} className="adminOrdersCard">
+              <div>
+                <h2>{item.productTitle}</h2>
+                <p className="muted" style={{ margin: "8px 0 0" }}>
+                  구매자 {buyerLabel(item)}
+                </p>
+              </div>
+              <div className="adminOrdersGrid">
+                <div className="adminMetaItem">
+                  <span className="adminMetaLabel">구매 방식</span>
+                  <span>{orderSourceLabel(item.source)}</span>
+                </div>
+                <div className="adminMetaItem">
+                  <span className="adminMetaLabel">상태</span>
+                  <span>{orderStatusLabel(item.status)}</span>
+                </div>
+                <div className="adminMetaItem">
+                  <span className="adminMetaLabel">주문 시각</span>
+                  <span>{new Date(item.orderedAt).toLocaleString("ko-KR")}</span>
+                </div>
+              </div>
+            </article>
+          ))}
+        </div>
       ) : null}
     </section>
   );

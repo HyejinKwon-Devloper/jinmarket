@@ -27,9 +27,9 @@ export function ManagedSellerAccessStatusPanel({
   return (
     <section className="panel sellerAccessPanel">
       <p className="eyebrow">Seller Approval</p>
-      <h2>판매 등록 전 승인 확인이 필요합니다.</h2>
+      <h2>판매자 등록 승인이 필요합니다</h2>
       <p className="muted">
-        판매자 사이트에 로그인한 뒤 승인 요청을 남기면 <strong>관리자 계정</strong>이 확인 후 승인합니다.
+        판매자 사이트에 로그인한 뒤 승인 요청을 보내면 <strong>관리자 계정</strong>이 확인합니다.
         승인 전에는 상품 등록과 판매 관리 기능을 사용할 수 없습니다.
       </p>
 
@@ -48,7 +48,9 @@ export function ManagedSellerAccessStatusPanel({
             <p className="muted">처리 일시: {formatDateTime(latestRequest.reviewedAt)}</p>
           ) : null}
           {isApproved ? (
-            <p className="muted">승인이 완료되었습니다. 화면 상태가 바로 바뀌지 않으면 다시 확인해 주세요.</p>
+            <p className="muted">
+              승인 완료 후 화면이 바로 바뀌지 않으면 상태를 다시 확인해 주세요.
+            </p>
           ) : null}
         </div>
       ) : null}
