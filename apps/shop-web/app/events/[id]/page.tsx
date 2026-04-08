@@ -103,7 +103,7 @@ export default function EventDetailPage() {
 
   return (
     <section className="detailGrid">
-      <div className="gallery">
+      <div className="gallery eventGallery">
         <ProductImageCarousel
           title={item.title}
           images={item.images}

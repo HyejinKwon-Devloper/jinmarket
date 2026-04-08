@@ -79,9 +79,9 @@ export function GameScreen() {
   const boardStage = (
     <div
       data-testid="game-board-stage"
-      className="relative overflow-hidden rounded-[30px] border border-white/10 bg-[#0d1838]"
+      className="relative overflow-hidden rounded-[30px] border border-white/10 bg-[#0d1838] lg:h-full"
     >
-      <div className="mx-auto w-full max-w-[28rem] lg:max-w-none">
+      <div className="mx-auto w-full max-w-[28rem] lg:flex lg:h-full lg:max-w-none lg:items-center lg:justify-center">
         <RandomGameCanvas
           sessionId={currentSession.id}
           foods={currentSession.foodItems}
@@ -97,10 +97,10 @@ export function GameScreen() {
       </div>
 
       {revealPhase !== "play" ? (
-        <div className="absolute inset-0 grid place-items-center bg-slate-950/58 px-6 text-center backdrop-blur-sm">
-          <div>
+        <div className="absolute inset-0 flex items-center justify-center bg-slate-950/58 px-4 text-center backdrop-blur-sm sm:px-6">
+          <div className="flex w-full max-w-[15.5rem] flex-col items-center sm:max-w-[18rem]">
             <motion.div
-              className="mx-auto w-36 sm:w-40"
+              className="w-36 sm:w-40"
               animate={
                 revealPhase === "inflate"
                   ? {
@@ -119,7 +119,7 @@ export function GameScreen() {
               />
             </motion.div>
             <motion.div
-              className="mt-4 rounded-full border border-white/16 bg-white/10 px-4 py-3 text-xs font-bold text-white/90 sm:px-5 sm:text-sm"
+              className="mt-4 w-full rounded-[22px] border border-white/16 bg-white/10 px-4 py-3 text-center text-xs font-bold text-white/90 sm:px-5 sm:text-sm"
               initial={{ opacity: 0, y: 10 }}
               animate={{ opacity: 1, y: 0 }}
             >

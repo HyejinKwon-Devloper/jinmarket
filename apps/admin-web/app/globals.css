@@ -435,12 +435,27 @@ button:disabled {
   gap: 12px;
 }
 
+.eventGallery {
+  gap: 14px;
+}
+
 .heroImage {
   width: 100%;
   aspect-ratio: 1 / 1;
   object-fit: cover;
   border-radius: 20px;
   background: rgba(0, 69, 68, 0.08);
+}
+
+.eventGallery .heroImage,
+.eventGallery .eventDetailHeroImage {
+  aspect-ratio: 4 / 3;
+  object-fit: contain;
+  padding: 14px;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.92), rgba(253, 248, 239, 0.98)),
+    rgba(0, 69, 68, 0.04);
+  border: 1px solid rgba(0, 69, 68, 0.12);
 }
 
 .thumbRow {
@@ -454,6 +469,17 @@ button:disabled {
   aspect-ratio: 1 / 1;
   object-fit: cover;
   border-radius: 16px;
+}
+
+.eventGallery .thumb,
+.eventGallery .eventDetailThumb {
+  aspect-ratio: 4 / 3;
+  object-fit: contain;
+  padding: 8px;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.92), rgba(253, 248, 239, 0.96)),
+    rgba(0, 69, 68, 0.04);
+  border: 1px solid rgba(0, 69, 68, 0.12);
 }
 
 .adminDetailPanel {

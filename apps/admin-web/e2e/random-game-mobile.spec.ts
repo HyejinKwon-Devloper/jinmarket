@@ -32,6 +32,25 @@ async function goToReviewPanel(page: Page) {
 }
 
 test.describe("random-game mobile flow", () => {
+  test("progress pills stay on a single row on mobile", async ({ page }) => {
+    await page.goto("/random-game");
+    await expect(page.getByTestId("start-screen")).toBeVisible();
+
+    const startBox = await getBox(page.getByTestId("progress-pill-start"));
+    const setupBox = await getBox(page.getByTestId("progress-pill-setup"));
+    const playBox = await getBox(page.getByTestId("progress-pill-game"));
+    const revealBox = await getBox(page.getByTestId("progress-pill-result"));
+
+    const topPositions = [startBox.y, setupBox.y, playBox.y, revealBox.y];
+    const minTop = Math.min(...topPositions);
+    const maxTop = Math.max(...topPositions);
+
+    expect(maxTop - minTop).toBeLessThanOrEqual(2);
+    expect(startBox.x).toBeLessThan(setupBox.x);
+    expect(setupBox.x).toBeLessThan(playBox.x);
+    expect(playBox.x).toBeLessThan(revealBox.x);
+  });
+
   test("setup panels unmount when moving between mobile steps", async ({
     page,
   }) => {
@@ -125,5 +144,34 @@ test.describe("random-game mobile flow", () => {
     expect(sequenceBox.y + sequenceBox.height).toBeLessThanOrEqual(
       actionsBox.y + 1,
     );
+  });
+
+  test("resetting from result returns to setup without hook errors", async ({
+    page,
+  }) => {
+    const pageErrors: Error[] = [];
+    page.on("pageerror", (error) => {
+      pageErrors.push(error);
+    });
+
+    await openSetupWithSampleData(page);
+    await goToDrawPanel(page);
+
+    await visibleByTestId(page, "setup-reveal-visible").click();
+    await page.getByTestId("setup-next-button").click();
+    await expect(page.getByTestId("setup-panel-review")).toBeVisible();
+
+    await visibleByTestId(page, "setup-prepare-button").scrollIntoViewIfNeeded();
+    await visibleByTestId(page, "setup-prepare-button").click();
+
+    await expect(page.getByTestId("result-screen")).toBeVisible();
+    await expect(visibleByTestId(page, "result-winner-list")).toBeVisible({
+      timeout: 12_000,
+    });
+
+    await visibleByTestId(page, "result-reset-button").click();
+
+    await expect(page.getByTestId("start-screen")).toBeVisible();
+    await expect(pageErrors).toEqual([]);
   });
 });

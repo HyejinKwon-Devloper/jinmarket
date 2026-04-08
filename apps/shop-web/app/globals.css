@@ -706,6 +706,10 @@ button:disabled {
   gap: 10px;
 }
 
+.eventGallery {
+  gap: 14px;
+}
+
 .detailInfoPanel {
   display: grid;
   gap: 18px;
@@ -780,6 +784,24 @@ button:disabled {
   background: rgba(0, 69, 68, 0.08);
 }
 
+.eventGallery .carouselViewport {
+  border: 1px solid rgba(0, 69, 68, 0.12);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.88), rgba(253, 248, 239, 0.98)),
+    rgba(255, 255, 255, 0.82);
+  box-shadow: 0 16px 30px rgba(0, 31, 31, 0.08);
+}
+
+.eventGallery .heroImage,
+.eventGallery .eventDetailHeroImage {
+  aspect-ratio: 4 / 3;
+  object-fit: contain;
+  padding: 14px;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.92), rgba(247, 242, 232, 0.96)),
+    rgba(0, 69, 68, 0.04);
+}
+
 .carouselNav {
   position: absolute;
   top: 50%;
@@ -844,6 +866,16 @@ button:disabled {
   object-fit: cover;
   border-radius: 16px;
   border: 1px solid rgba(0, 69, 68, 0.14);
+}
+
+.eventGallery .thumb,
+.eventGallery .eventDetailThumb {
+  aspect-ratio: 4 / 3;
+  object-fit: contain;
+  padding: 8px;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.92), rgba(247, 242, 232, 0.94)),
+    rgba(0, 69, 68, 0.04);
 }
 
 .carouselDots {

@@ -103,14 +103,18 @@ export default function AdminEventDetailPage() {
   return (
     <>
       <section className="detailGrid">
-        <div className="panel gallery">
-          <img className="heroImage" src={primaryImageUrl} alt={item.title} />
+        <div className="panel gallery eventGallery">
+          <img
+            className="heroImage eventDetailHeroImage"
+            src={primaryImageUrl}
+            alt={item.title}
+          />
           {item.images.length > 1 ? (
             <div className="thumbRow">
               {item.images.map((image) => (
                 <img
                   key={image.providerPublicId}
-                  className="thumb"
+                  className="thumb eventDetailThumb"
                   src={image.imageUrl}
                   alt={item.title}
                 />

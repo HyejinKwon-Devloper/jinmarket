@@ -78,6 +78,86 @@ type EventEntryRow = {
   created_at: Date;
 };
 
+const ensureEventSchemaSql = `
+  DO $$
+  BEGIN
+    IF NOT EXISTS (
+      SELECT 1
+      FROM pg_type
+      WHERE typname = 'event_registration_mode'
+    ) THEN
+      CREATE TYPE event_registration_mode AS ENUM ('MANUAL', 'SHOP_ENTRY');
+    END IF;
+  END
+  $$;
+
+  CREATE TABLE IF NOT EXISTS events (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    seller_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    title VARCHAR(140) NOT NULL,
+    description TEXT NOT NULL,
+    registration_mode event_registration_mode NOT NULL,
+    starts_at TIMESTAMPTZ NOT NULL,
+    ends_at TIMESTAMPTZ NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    CONSTRAINT events_period_check CHECK (ends_at > starts_at)
+  );
+
+  CREATE TABLE IF NOT EXISTS event_images (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    event_id UUID NOT NULL REFERENCES events(id) ON DELETE CASCADE,
+    provider image_provider NOT NULL DEFAULT 'CLOUDINARY',
+    provider_public_id VARCHAR(255) NOT NULL,
+    image_url TEXT NOT NULL,
+    width INTEGER,
+    height INTEGER,
+    bytes INTEGER,
+    sort_order INTEGER NOT NULL DEFAULT 1 CHECK (sort_order >= 1),
+    is_primary BOOLEAN NOT NULL DEFAULT FALSE,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+  );
+
+  CREATE TABLE IF NOT EXISTS event_entries (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    event_id UUID NOT NULL REFERENCES events(id) ON DELETE CASCADE,
+    user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    UNIQUE (event_id, user_id)
+  );
+
+  CREATE UNIQUE INDEX IF NOT EXISTS uq_event_primary_image
+    ON event_images(event_id)
+    WHERE is_primary = TRUE;
+
+  CREATE INDEX IF NOT EXISTS idx_events_seller_created
+    ON events(seller_id, created_at DESC);
+
+  CREATE INDEX IF NOT EXISTS idx_events_public_window
+    ON events(starts_at, ends_at, created_at DESC);
+
+  CREATE INDEX IF NOT EXISTS idx_event_entries_event
+    ON event_entries(event_id, created_at DESC);
+
+  CREATE INDEX IF NOT EXISTS idx_event_entries_user
+    ON event_entries(user_id, created_at DESC);
+`;
+
+let eventSchemaReadyPromise: Promise<void> | null = null;
+
+async function ensureEventSchema() {
+  if (!eventSchemaReadyPromise) {
+    eventSchemaReadyPromise = query(ensureEventSchemaSql)
+      .then(() => undefined)
+      .catch((error) => {
+        eventSchemaReadyPromise = null;
+        throw error;
+      });
+  }
+
+  await eventSchemaReadyPromise;
+}
+
 function mapEventCard(row: EventCardRow): EventCard {
   return {
     id: row.id,
@@ -196,6 +276,8 @@ async function replaceEventImages(client: DbClient, eventId: string, images: Eve
 }
 
 async function getEventImages(eventId: string) {
+  await ensureEventSchema();
+
   const result = await query<EventImageRow>(
     `
       SELECT id, image_url, provider_public_id, width, height, bytes, sort_order, is_primary
@@ -210,6 +292,8 @@ async function getEventImages(eventId: string) {
 }
 
 async function getEventById(eventId: string) {
+  await ensureEventSchema();
+
   const result = await query<EventCardRow>(
     `
       SELECT
@@ -265,6 +349,8 @@ function isEventActive(event: Pick<EventCard, "startsAt" | "endsAt">) {
 }
 
 export async function listPublicEvents() {
+  await ensureEventSchema();
+
   const result = await query<EventCardRow>(buildEventListQuery(true));
   return result.rows.map(mapEventCard);
 }
@@ -313,6 +399,8 @@ export async function getPublicEventDetail(eventId: string, viewerId?: string | 
 }
 
 export async function createEvent(sellerId: string, input: CreateEventInput) {
+  await ensureEventSchema();
+
   const parsed = createEventSchema.parse(input) as CreateEventInput;
   assertValidEventImages(parsed.images);
 
@@ -354,6 +442,8 @@ export async function createEvent(sellerId: string, input: CreateEventInput) {
 }
 
 export async function listSellerEvents(sellerId: string) {
+  await ensureEventSchema();
+
   const result = await query<EventCardRow>(
     `
       SELECT
@@ -399,6 +489,8 @@ export async function getSellerEventDetail(sellerId: string, eventId: string): P
 }
 
 export async function createEventEntry(userId: string, eventId: string) {
+  await ensureEventSchema();
+
   return withTransaction(async (client) => {
     const eventResult = await client.query<{
       id: string;
@@ -475,6 +567,8 @@ export async function createEventEntry(userId: string, eventId: string) {
 }
 
 export async function listEventEntries(sellerId: string, eventId: string) {
+  await ensureEventSchema();
+
   await ensureSellerOwnsEvent(sellerId, eventId);
 
   const result = await query<EventEntryRow>(

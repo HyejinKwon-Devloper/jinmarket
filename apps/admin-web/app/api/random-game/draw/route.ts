@@ -3,6 +3,7 @@ import { randomInt, randomUUID } from "node:crypto";
 import { NextResponse, type NextRequest } from "next/server";
 
 import { drawWinners } from "../../../../features/random-game/lib/draw";
+import { loadEventDrawSourceThroughAdminProxy } from "../../../../features/random-game/lib/event-draw-source-loader";
 import { createGameSession } from "../../../../features/random-game/lib/game-board";
 import { normalizeParticipantName } from "../../../../features/random-game/lib/participants";
 import type {
@@ -174,14 +175,17 @@ function sanitizeEventParticipants(source: EventDrawSourcePayload) {
 }
 
 async function loadEventDrawSource(request: NextRequest, eventId: string) {
-  const target = new URL(`/api/admin/events/${eventId}/draw-source`, request.url);
-  const response = await fetch(target, {
-    method: "GET",
-    headers: {
-      cookie: request.headers.get("cookie") ?? "",
-    },
-    cache: "no-store",
-  });
+  let response: Response;
+
+  try {
+    response = await loadEventDrawSourceThroughAdminProxy(request, eventId);
+  } catch {
+    throw {
+      status: 502,
+      message:
+        "이벤트 응모자 정보를 가져오는 중 네트워크 오류가 발생했습니다.",
+    } satisfies DrawRouteError;
+  }
 
   if (!response.ok) {
     const payload = (await response.json().catch(() => ({}))) as {

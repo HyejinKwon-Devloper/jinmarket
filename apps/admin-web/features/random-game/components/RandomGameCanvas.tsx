@@ -534,7 +534,7 @@ export function RandomGameCanvas({
   return (
     <div
       data-testid="game-canvas"
-      className="relative aspect-[4/5] w-full"
+      className="relative aspect-[4/5] w-full lg:h-full lg:w-auto lg:max-w-full"
       style={{ touchAction: "none" }}
     >
       <div ref={boardRef} className="absolute inset-0">

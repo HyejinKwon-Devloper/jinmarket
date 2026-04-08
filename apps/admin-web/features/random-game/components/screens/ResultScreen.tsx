@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 
 import { useRandomGameStore } from "../../store/useRandomGameStore";
@@ -110,17 +110,12 @@ export function ResultScreen() {
     ? "같은 설정으로 바로 다시 추첨"
     : "같은 설정으로 다시 플레이";
 
-  const sequenceLabel = useMemo(() => {
-    if (centerMode === "complete") {
-      return "ALL REVEALED";
-    }
-
-    if (activeWinner) {
-      return `WINNER ${revealedCount}`;
-    }
-
-    return "PREPARING";
-  }, [activeWinner, centerMode, revealedCount]);
+  const sequenceLabel =
+    centerMode === "complete"
+      ? "ALL REVEALED"
+      : activeWinner
+        ? `WINNER ${revealedCount}`
+        : "PREPARING";
 
   const sourceSummary =
     participantSource?.kind === "event"
@@ -297,6 +292,7 @@ export function ResultScreen() {
         참가자와 설정 수정하기
       </button>
       <button
+        data-testid="result-reset-button"
         type="button"
         onClick={resetAll}
         disabled={isDrawPending}
