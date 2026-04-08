@@ -1,6 +1,7 @@
 ﻿"use client";
 
 import Link from "next/link";
+import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
 import type { SessionUser } from "@jinmarket/shared";
 
@@ -9,18 +10,30 @@ import { fetchCurrentUser, isApprovalAdmin, requestJson } from "../lib/api";
 const defaultShopAppUrl =
   process.env.NODE_ENV === "production"
     ? "https://web.jinmarket.shop"
-    : "https://jinmarket.test:3000";
+    : "https://jinmarket.test:3100";
 const shopAppUrl = process.env.NEXT_PUBLIC_SHOP_APP_URL ?? defaultShopAppUrl;
 
 export function AdminChrome({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<SessionUser | null>(null);
   const [navOpen, setNavOpen] = useState(false);
+  const pathname = usePathname();
 
   useEffect(() => {
     void fetchCurrentUser()
       .then(setUser)
       .catch(() => setUser(null));
   }, []);
+
+  useEffect(() => {
+    if (!user || user.sellerEmailVerifiedAt || pathname === "/login" || typeof window === "undefined") {
+      return;
+    }
+
+    const loginUrl = new URL("/login", window.location.origin);
+    loginUrl.searchParams.set("return_to", `${window.location.pathname}${window.location.search}`);
+    loginUrl.searchParams.set("verify_required", "1");
+    window.location.replace(loginUrl.toString());
+  }, [pathname, user]);
 
   function closeNav() {
     setNavOpen(false);

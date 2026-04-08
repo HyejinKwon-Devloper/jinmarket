@@ -12,6 +12,14 @@
   --danger: #b22222;
   --danger-soft: rgba(178, 34, 34, 0.12);
   --shadow: 0 18px 38px rgba(0, 31, 31, 0.1);
+  --shadow-strong: 0 24px 56px rgba(0, 31, 31, 0.16);
+  --font-body: clamp(14px, 3.6vw, 16px);
+  --font-small: clamp(12px, 3vw, 13px);
+  --font-label: clamp(13px, 3.2vw, 14px);
+  --font-button: clamp(14px, 3.4vw, 15px);
+  --font-title: clamp(28px, 7vw, 42px);
+  --font-heading: clamp(22px, 5.4vw, 32px);
+  --font-subheading: clamp(18px, 4.6vw, 24px);
 }
 
 * {
@@ -31,6 +39,7 @@ body {
 
 body {
   line-height: 1.55;
+  font-size: var(--font-body);
 }
 
 a {
@@ -71,26 +80,58 @@ button:disabled {
 
 .shell {
   min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  width: 100%;
 }
 
 .topbar {
   display: grid;
-  gap: 16px;
-  padding: 18px 20px;
+  gap: 14px;
+  padding: 16px 16px 18px;
   border-bottom: 1px solid rgba(255, 210, 0, 0.18);
   background: rgba(0, 69, 68, 0.92);
   backdrop-filter: blur(12px);
   position: sticky;
   top: 0;
+  overflow: hidden;
   z-index: 20;
   color: #f7f2e8;
+}
+
+.topbar::before,
+.topbar::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+}
+
+.topbar::before {
+  background: url("/header.png") center center / cover no-repeat;
+  opacity: 0.18;
+  transform: scale(1.04);
+}
+
+.topbar::after {
+  background:
+    linear-gradient(
+      135deg,
+      rgba(0, 69, 68, 0.94) 0%,
+      rgba(0, 69, 68, 0.84) 48%,
+      rgba(26, 26, 26, 0.54) 100%
+    );
+}
+
+.topbar > * {
+  position: relative;
+  z-index: 1;
 }
 
 .topbarHeaderRow {
   display: flex;
   justify-content: space-between;
-  align-items: flex-start;
-  gap: 16px;
+  align-items: center;
+  gap: 14px;
 }
 
 .topbar .eyebrow {
@@ -110,7 +151,7 @@ button:disabled {
 .eyebrow {
   margin: 0 0 6px;
   color: #ffd200;
-  font-size: 12px;
+  font-size: var(--font-small);
   font-weight: 700;
   letter-spacing: 0.16em;
   text-transform: uppercase;
@@ -118,10 +159,12 @@ button:disabled {
 
 .brand {
   display: inline-block;
-  max-width: 18ch;
-  font-size: clamp(22px, 3.6vw, 30px);
+  max-width: 14ch;
+  font-size: clamp(20px, 5.3vw, 29px);
   font-weight: 800;
   line-height: 1.08;
+  word-break: keep-all;
+  text-shadow: 0 10px 24px rgba(0, 0, 0, 0.28);
 }
 
 .navToggle {
@@ -135,6 +178,7 @@ button:disabled {
   background: rgba(247, 242, 232, 0.1);
   color: #f7f2e8;
   cursor: pointer;
+  box-shadow: 0 12px 20px rgba(0, 0, 0, 0.14);
 }
 
 .nav {
@@ -148,6 +192,11 @@ button:disabled {
 
 .nav.open {
   display: flex;
+  padding: 10px;
+  border-radius: 18px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: rgba(0, 37, 37, 0.34);
+  backdrop-filter: blur(8px);
 }
 
 .nav a,
@@ -156,16 +205,20 @@ button:disabled {
   align-items: center;
   justify-content: center;
   min-height: 42px;
+  font-size: var(--font-label);
 }
 
 .main {
+  flex: 1 0 auto;
+  width: 100%;
   max-width: 1180px;
   margin: 0 auto;
-  padding: 20px 16px 40px;
+  min-width: 0;
+  padding: 16px 12px 36px;
 }
 
 .siteFooter {
-  margin-top: 12px;
+  margin-top: auto;
   border-top: 1px solid rgba(0, 69, 68, 0.1);
   background: rgba(253, 248, 239, 0.84);
   backdrop-filter: blur(8px);
@@ -185,7 +238,7 @@ button:disabled {
 .siteFooterCopy {
   margin: 0;
   color: var(--muted);
-  font-size: 14px;
+  font-size: var(--font-small);
 }
 
 .siteFooterLinks {
@@ -210,7 +263,7 @@ button:disabled {
 
 .legalPage h2 {
   margin: 28px 0 10px;
-  font-size: 22px;
+  font-size: var(--font-subheading);
 }
 
 .legalPage p {
@@ -237,14 +290,19 @@ button:disabled {
 .loginCard {
   background: var(--panel);
   border: 1px solid rgba(0, 69, 68, 0.12);
-  border-radius: 24px;
+  border-radius: 20px;
   box-shadow: var(--shadow);
 }
 
 .hero,
 .panel,
 .loginCard {
-  padding: 22px;
+  padding: 18px;
+}
+
+.loginCard {
+  max-width: 720px;
+  margin: 0 auto;
 }
 
 .grid {
@@ -280,7 +338,7 @@ button:disabled {
   align-items: center;
   padding: 6px 10px;
   border-radius: 999px;
-  font-size: 13px;
+  font-size: var(--font-small);
   font-weight: 600;
   background: var(--accent-soft);
   color: var(--main);
@@ -294,31 +352,46 @@ button:disabled {
   justify-content: center;
   border-radius: 999px;
   border: 1px solid transparent;
-  padding: 12px 18px;
+  min-height: 42px;
+  padding: 10px 14px;
   cursor: pointer;
   text-align: center;
+  font-size: var(--font-button);
+  font-weight: 700;
+  line-height: 1.3;
+  white-space: normal;
+  box-shadow: 0 12px 24px rgba(0, 31, 31, 0.12);
 }
 
 .primaryButton {
   background: linear-gradient(180deg, var(--accent) 0%, var(--accent-deep) 100%);
-  color: var(--text);
+  border-color: rgba(109, 83, 0, 0.16);
+  color: #2c2200;
 }
 
 .secondaryButton {
-  background: var(--main);
-  color: #f7f2e8;
+  background: linear-gradient(180deg, #056260 0%, var(--main) 100%);
+  border-color: rgba(0, 69, 68, 0.2);
+  color: #fffdf6;
 }
 
 .ghostButton {
-  background: rgba(244, 167, 185, 0.12);
-  border-color: rgba(244, 167, 185, 0.5);
+  background: rgba(255, 255, 255, 0.84);
+  border-color: rgba(0, 69, 68, 0.18);
   color: var(--main);
+}
+
+.primaryButton:hover,
+.secondaryButton:hover,
+.ghostButton:hover {
+  box-shadow: 0 16px 28px rgba(0, 31, 31, 0.16);
 }
 
 .field {
   display: grid;
   gap: 8px;
   margin-top: 14px;
+  font-size: var(--font-label);
 }
 
 .input,
@@ -329,6 +402,7 @@ button:disabled {
   border-radius: 16px;
   padding: 12px 14px;
   background: rgba(255, 255, 255, 0.82);
+  font-size: 16px;
 }
 
 .textarea {
@@ -341,22 +415,24 @@ button:disabled {
 }
 
 .message {
-  margin-top: 16px;
+  margin-top: 12px;
   padding: 14px 16px;
   border-radius: 16px;
-  background: rgba(244, 167, 185, 0.14);
-  border: 1px solid rgba(178, 34, 34, 0.16);
+  background: rgba(255, 255, 255, 0.82);
+  border: 1px solid rgba(178, 34, 34, 0.14);
+  color: var(--text);
+  font-size: var(--font-label);
 }
 
 .detailGrid {
   display: grid;
-  gap: 24px;
-  grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr);
+  gap: 16px;
+  grid-template-columns: minmax(0, 1fr);
 }
 
 .gallery {
   display: grid;
-  gap: 16px;
+  gap: 12px;
 }
 
 .heroImage {
@@ -382,12 +458,15 @@ button:disabled {
 
 .adminDetailPanel {
   display: grid;
-  gap: 16px;
+  gap: 18px;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.78), rgba(253, 248, 239, 0.98)),
+    var(--panel);
 }
 
 .adminDetailPrice {
   margin: 0;
-  font-size: clamp(24px, 4vw, 34px);
+  font-size: clamp(22px, 5vw, 34px);
   font-weight: 800;
   line-height: 1.1;
 }
@@ -398,7 +477,7 @@ button:disabled {
 
 .adminDetailControls {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  grid-template-columns: 1fr;
   gap: 12px;
 }
 
@@ -408,7 +487,7 @@ button:disabled {
   padding: 16px;
   border-radius: 20px;
   border: 1px solid rgba(0, 69, 68, 0.12);
-  background: rgba(255, 255, 255, 0.62);
+  background: rgba(255, 255, 255, 0.76);
 }
 
 .adminControlCard label {
@@ -476,24 +555,26 @@ button:disabled {
 
 .adminRecordList {
   display: grid;
-  gap: 12px;
+  gap: 10px;
   margin-top: 16px;
 }
 
 .adminRecordCard {
   display: grid;
-  gap: 14px;
-  padding: 16px;
+  gap: 12px;
+  padding: 14px;
   border-radius: 20px;
   border: 1px solid rgba(0, 69, 68, 0.12);
-  background: rgba(255, 255, 255, 0.58);
+  background: rgba(255, 255, 255, 0.7);
+  box-shadow: 0 16px 30px rgba(0, 31, 31, 0.08);
 }
 
 .adminRecordHeader {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   justify-content: space-between;
   gap: 12px;
+  flex-wrap: wrap;
 }
 
 .adminRecordGrid {
@@ -515,7 +596,8 @@ button:disabled {
 .adminRecordActions {
   display: flex;
   align-items: center;
-  justify-content: flex-end;
+  justify-content: flex-start;
+  flex-wrap: wrap;
   gap: 10px;
 }
 
@@ -529,14 +611,15 @@ button:disabled {
   padding: 12px 10px;
   border-bottom: 1px solid rgba(0, 69, 68, 0.12);
   text-align: left;
+  font-size: var(--font-label);
 }
 
 .sectionHeader {
   display: flex;
   justify-content: space-between;
-  align-items: end;
+  align-items: flex-end;
   gap: 16px;
-  margin-bottom: 18px;
+  margin-bottom: 14px;
 }
 
 .sectionHeader h2,
@@ -545,11 +628,23 @@ button:disabled {
 .panel h2,
 .loginCard h1 {
   margin: 0;
+  line-height: 1.14;
+}
+
+.sectionHeader h2,
+.hero h1,
+.panel h1,
+.loginCard h1 {
+  font-size: var(--font-heading);
+}
+
+.panel h2 {
+  font-size: var(--font-subheading);
 }
 
 .sectionMeta {
   color: var(--muted);
-  font-size: 14px;
+  font-size: var(--font-small);
 }
 
 .adminListPanel {
@@ -558,23 +653,26 @@ button:disabled {
 
 .adminProductList {
   display: grid;
-  gap: 14px;
+  gap: 12px;
 }
 
 .adminProductRow {
   display: grid;
-  gap: 16px;
-  padding: 18px;
+  gap: 12px;
+  padding: 14px;
   border: 1px solid rgba(0, 69, 68, 0.12);
-  border-radius: 22px;
-  background: rgba(255, 255, 255, 0.58);
+  border-radius: 20px;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.76), rgba(253, 248, 239, 0.98)),
+    rgba(255, 255, 255, 0.58);
+  box-shadow: 0 16px 30px rgba(0, 31, 31, 0.08);
 }
 
 .adminProductSummary {
   display: grid;
-  grid-template-columns: 92px minmax(0, 1fr);
-  gap: 14px;
-  align-items: start;
+  grid-template-columns: 84px minmax(0, 1fr);
+  gap: 12px;
+  align-items: flex-start;
 }
 
 .adminProductThumb {
@@ -593,7 +691,7 @@ button:disabled {
 
 .adminListTitle {
   display: -webkit-box;
-  font-size: 17px;
+  font-size: clamp(16px, 4vw, 20px);
   font-weight: 800;
   line-height: 1.25;
   word-break: keep-all;
@@ -624,26 +722,31 @@ button:disabled {
 }
 
 .adminTablePrice {
-  font-size: 18px;
+  font-size: clamp(17px, 4.1vw, 21px);
   font-weight: 800;
   white-space: nowrap;
 }
 
 .adminMetaGrid {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 10px 14px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
 }
 
 .adminMetaItem {
   display: grid;
   gap: 4px;
   min-width: 0;
+  flex: 1 1 150px;
+  padding: 10px 12px;
+  border-radius: 16px;
+  border: 1px solid rgba(0, 69, 68, 0.1);
+  background: rgba(255, 255, 255, 0.86);
 }
 
 .adminMetaLabel {
   color: var(--muted);
-  font-size: 12px;
+  font-size: var(--font-small);
   font-weight: 700;
   letter-spacing: 0.06em;
   text-transform: uppercase;
@@ -660,7 +763,7 @@ button:disabled {
 }
 
 .sellerAccessPanel {
-  margin-top: 24px;
+  margin-top: 20px;
 }
 
 .sellerAccessStatusCard {
@@ -668,7 +771,7 @@ button:disabled {
   padding: 14px 16px;
   border-radius: 18px;
   border: 1px solid rgba(0, 69, 68, 0.12);
-  background: rgba(255, 255, 255, 0.68);
+  background: rgba(255, 255, 255, 0.78);
 }
 
 .sellerAccessStatusCard p,
@@ -678,6 +781,33 @@ button:disabled {
 
 .sellerAccessStatusCard p + p {
   margin-top: 6px;
+}
+
+.adminOrdersList {
+  display: grid;
+  gap: 12px;
+  margin-top: 16px;
+}
+
+.adminOrdersCard {
+  display: grid;
+  gap: 12px;
+  padding: 14px;
+  border-radius: 18px;
+  border: 1px solid rgba(0, 69, 68, 0.12);
+  background: rgba(255, 255, 255, 0.74);
+  box-shadow: 0 16px 30px rgba(0, 31, 31, 0.08);
+}
+
+.adminOrdersCard h2 {
+  margin: 0;
+  font-size: var(--font-subheading);
+}
+
+.adminOrdersGrid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
 }
 
 @media (min-width: 700px) {
@@ -703,13 +833,24 @@ button:disabled {
     margin-bottom: 20px;
   }
 
-  .adminProductRow {
-    grid-template-columns: minmax(0, 2.2fr) minmax(260px, 1.2fr) auto;
-    align-items: center;
+  .adminDetailControls {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (min-width: 980px) {
+  .topbar {
+    padding: 20px 32px;
   }
 
-  .adminMetaGrid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+  .detailGrid {
+    grid-template-columns: minmax(0, 1.08fr) minmax(0, 1fr);
+  }
+
+  .adminProductRow {
+    grid-template-columns: minmax(0, 2.1fr) minmax(260px, 1.2fr) auto;
+    align-items: center;
+    padding: 18px;
   }
 
   .adminMetaActions {
@@ -718,17 +859,7 @@ button:disabled {
   }
 }
 
-@media (min-width: 980px) {
-  .topbar {
-    padding: 20px 32px;
-  }
-}
-
 @media (max-width: 699px) {
-  .detailGrid {
-    grid-template-columns: 1fr;
-  }
-
   .nav {
     flex-direction: column;
     align-items: stretch;
@@ -739,6 +870,10 @@ button:disabled {
   .nav button,
   .actionRow > * {
     width: 100%;
+  }
+
+  .adminProductSummary {
+    grid-template-columns: 92px minmax(0, 1fr);
   }
 
   .sectionHeader {
@@ -764,30 +899,12 @@ button:disabled {
     flex-direction: column;
   }
 
-  .adminProductRow {
-    padding: 14px;
-    gap: 12px;
-  }
-
-  .adminProductSummary {
-    grid-template-columns: 88px minmax(0, 1fr);
-    gap: 12px;
-  }
-
-  .adminProductThumb {
-    width: 88px;
-  }
-
   .adminListTitle {
     font-size: 15px;
   }
 
   .adminListDescription {
-    font-size: 14px;
-  }
-
-  .adminMetaGrid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+    font-size: var(--font-label);
   }
 
   .adminTableActions {
@@ -796,5 +913,13 @@ button:disabled {
 
   .adminTableActions > * {
     flex: 1 1 0;
+  }
+
+  .adminMetaActions > * {
+    width: 100%;
+  }
+
+  .adminOrdersGrid {
+    grid-template-columns: 1fr;
   }
 }

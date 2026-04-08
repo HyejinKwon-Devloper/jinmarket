@@ -7,6 +7,7 @@ import type {
 
 import { AppError } from "../errors.js";
 
+import { accountIdentityJoins, accountLoginIdSql } from "./account-sql.js";
 import { ensureSellerProfile } from "./auth-service.js";
 
 type SellerAccessRequestRow = {
@@ -48,16 +49,14 @@ async function getLatestRequestRow(userId: string) {
         sar.id,
         sar.user_id,
         applicant.display_name AS applicant_display_name,
-        applicant_auth.provider_username AS applicant_threads_username,
+        ${accountLoginIdSql("applicant")} AS applicant_threads_username,
         sar.status,
         sar.requested_at,
         sar.reviewed_at,
         reviewer.display_name AS reviewer_display_name
       FROM seller_access_requests sar
       JOIN users applicant ON applicant.id = sar.user_id
-      LEFT JOIN auth_accounts applicant_auth
-        ON applicant_auth.user_id = applicant.id
-       AND applicant_auth.provider = 'THREADS'
+      ${accountIdentityJoins("applicant")}
       LEFT JOIN users reviewer ON reviewer.id = sar.reviewed_by
       WHERE sar.user_id = $1
       ORDER BY sar.requested_at DESC
@@ -81,7 +80,7 @@ export async function getSellerAccessOverview(user: SessionUser): Promise<Seller
 
 export async function createSellerAccessRequest(user: SessionUser) {
   if (hasSellerRole(user)) {
-    throw new AppError("이미 판매자 권한이 승인된 계정입니다.", 409);
+    throw new AppError("이미 판매 권한이 있는 계정입니다.", 409);
   }
 
   return withTransaction(async (client) => {
@@ -91,16 +90,14 @@ export async function createSellerAccessRequest(user: SessionUser) {
           sar.id,
           sar.user_id,
           applicant.display_name AS applicant_display_name,
-          applicant_auth.provider_username AS applicant_threads_username,
+          ${accountLoginIdSql("applicant")} AS applicant_threads_username,
           sar.status,
           sar.requested_at,
           sar.reviewed_at,
           reviewer.display_name AS reviewer_display_name
         FROM seller_access_requests sar
         JOIN users applicant ON applicant.id = sar.user_id
-        LEFT JOIN auth_accounts applicant_auth
-          ON applicant_auth.user_id = applicant.id
-         AND applicant_auth.provider = 'THREADS'
+        ${accountIdentityJoins("applicant")}
         LEFT JOIN users reviewer ON reviewer.id = sar.reviewed_by
         WHERE sar.user_id = $1
           AND sar.status = 'PENDING'
@@ -126,16 +123,14 @@ export async function createSellerAccessRequest(user: SessionUser) {
           inserted.id,
           inserted.user_id,
           applicant.display_name AS applicant_display_name,
-          applicant_auth.provider_username AS applicant_threads_username,
+          ${accountLoginIdSql("applicant")} AS applicant_threads_username,
           inserted.status,
           inserted.requested_at,
           inserted.reviewed_at,
           reviewer.display_name AS reviewer_display_name
         FROM inserted
         JOIN users applicant ON applicant.id = inserted.user_id
-        LEFT JOIN auth_accounts applicant_auth
-          ON applicant_auth.user_id = applicant.id
-         AND applicant_auth.provider = 'THREADS'
+        ${accountIdentityJoins("applicant")}
         LEFT JOIN users reviewer ON reviewer.id = inserted.reviewed_by
       `,
       [user.id]
@@ -152,16 +147,14 @@ export async function listPendingSellerAccessRequests() {
         sar.id,
         sar.user_id,
         applicant.display_name AS applicant_display_name,
-        applicant_auth.provider_username AS applicant_threads_username,
+        ${accountLoginIdSql("applicant")} AS applicant_threads_username,
         sar.status,
         sar.requested_at,
         sar.reviewed_at,
         reviewer.display_name AS reviewer_display_name
       FROM seller_access_requests sar
       JOIN users applicant ON applicant.id = sar.user_id
-      LEFT JOIN auth_accounts applicant_auth
-        ON applicant_auth.user_id = applicant.id
-       AND applicant_auth.provider = 'THREADS'
+      ${accountIdentityJoins("applicant")}
       LEFT JOIN users reviewer ON reviewer.id = sar.reviewed_by
       WHERE sar.status = 'PENDING'
       ORDER BY sar.requested_at ASC
@@ -231,16 +224,14 @@ export async function approveSellerAccessRequest(requestId: string, reviewerId: 
           sar.id,
           sar.user_id,
           applicant.display_name AS applicant_display_name,
-          applicant_auth.provider_username AS applicant_threads_username,
+          ${accountLoginIdSql("applicant")} AS applicant_threads_username,
           sar.status,
           sar.requested_at,
           sar.reviewed_at,
           reviewer.display_name AS reviewer_display_name
         FROM seller_access_requests sar
         JOIN users applicant ON applicant.id = sar.user_id
-        LEFT JOIN auth_accounts applicant_auth
-          ON applicant_auth.user_id = applicant.id
-         AND applicant_auth.provider = 'THREADS'
+        ${accountIdentityJoins("applicant")}
         LEFT JOIN users reviewer ON reviewer.id = sar.reviewed_by
         WHERE sar.id = $1
       `,

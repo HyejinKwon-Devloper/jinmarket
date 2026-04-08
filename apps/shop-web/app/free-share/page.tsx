@@ -45,9 +45,10 @@ export default function FreeSharePage() {
       <section className="hero heroSplit">
         <div>
           <p className="eyebrow">Free Share Zone</p>
-          <h1>무료로 나눔받을 수 있는 상품만 모아보세요</h1>
+          <h1>무료로 나눔받을 수 있는 상품만 따로 둘러보세요</h1>
           <p className="muted heroBody">
-            무료 나눔 상품도 즉시 신청하거나 가위바위보 도전 방식으로 진행됩니다. 당첨 또는 신청 완료 후에는 판매자가 전달 방법을 직접 안내합니다.
+            무료 나눔 상품은 즉시 신청하거나 가위바위보 도전 방식으로 진행됩니다.
+            신청이 완료되면 판매자가 전달 방법을 직접 안내합니다.
           </p>
           <div className="actionRow" style={{ marginTop: 16 }}>
             <Link className="ghostButton" href="/">
@@ -56,7 +57,8 @@ export default function FreeSharePage() {
           </div>
           {!user ? (
             <div className="message">
-              로그인 전에는 목록만 볼 수 있습니다. 무료 나눔을 신청하려면 <Link href="/login">로그인</Link>해 주세요.
+              로그인 전에는 목록만 확인할 수 있습니다. 무료 나눔을 신청하려면{" "}
+              <Link href="/login">로그인</Link>해 주세요.
             </div>
           ) : null}
           {error ? <div className="message">{error}</div> : null}
@@ -78,7 +80,7 @@ export default function FreeSharePage() {
             </div>
             <div className="heroStat">
               <strong>{items.filter((item) => item.status === "OPEN").length}</strong>
-              <span>현재 열려 있는 나눔</span>
+              <span>현재 신청 가능</span>
             </div>
           </div>
         </aside>
@@ -91,7 +93,8 @@ export default function FreeSharePage() {
             <h2>무료 나눔 존</h2>
           </div>
           <div className="sectionMeta">
-            무료 나눔 상품만 따로 모아 보여줍니다. 모바일 2열, 큰 화면 3열 카드로 빠르게 둘러볼 수 있습니다.
+            무료 나눔 상품만 모아 보여줍니다. 모바일에서는 2열, 큰 화면에서는 3열 카드로
+            빠르게 둘러볼 수 있습니다.
           </div>
         </div>
 

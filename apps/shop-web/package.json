@@ -3,7 +3,7 @@
   "version": "0.0.1",
   "private": true,
   "scripts": {
-    "dev": "node ../../scripts/next-dev-https.mjs --dir . --port 3000",
+    "dev": "node ../../scripts/next-dev-https.mjs --dir . --port 3100",
     "build": "next build",
     "typecheck": "tsc --project tsconfig.json --noEmit"
   },

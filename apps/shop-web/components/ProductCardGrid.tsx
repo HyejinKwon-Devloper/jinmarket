@@ -5,6 +5,14 @@ import type { ProductCard } from "@jinmarket/shared";
 
 import { formatPrice, purchaseTypeLabel, statusLabel } from "../lib/api";
 
+function sellerLabel(item: ProductCard) {
+  if (item.sellerDisplayName) {
+    return item.sellerDisplayName;
+  }
+
+  return "익명 등록";
+}
+
 export function ProductCardGrid({
   items,
   emptyMessage
@@ -31,18 +39,22 @@ export function ProductCardGrid({
           />
           <div className="cardBody">
             <div className="badgeRow">
-              <span className={`badge ${item.status === "OPEN" ? "success" : ""}`}>{statusLabel(item.status)}</span>
+              <span className={`badge ${item.status === "OPEN" ? "success" : ""}`}>
+                {statusLabel(item.status)}
+              </span>
               <span className="badge">{purchaseTypeLabel(item.purchaseType)}</span>
               {item.isFreeShare ? <span className="badge">무료 나눔</span> : null}
               {item.allowPriceOffer ? <span className="badge">가격 제안 가능</span> : null}
             </div>
 
-            <div className="cardMeta">
+            <div className="cardSummary">
               <h2 className="cardTitle">{item.title}</h2>
-              {item.sellerDisplayName ? <p className="muted">{item.sellerDisplayName}</p> : null}
+              <p className="cardSellerLabel">판매자 {sellerLabel(item)}</p>
             </div>
 
-            <p className="priceText">{formatPrice(item.priceKrw)}</p>
+            <div className="cardPriceRow">
+              <p className="priceText">{formatPrice(item.priceKrw)}</p>
+            </div>
 
             <div className="cardFooter">
               <Link className="primaryButton" href={`/products/${item.id}`}>

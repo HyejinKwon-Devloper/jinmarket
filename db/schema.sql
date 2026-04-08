@@ -72,6 +72,7 @@ CREATE TABLE users (
     display_name VARCHAR(60) NOT NULL,
     profile_image_url TEXT,
     email VARCHAR(255),
+    seller_email_verified_at TIMESTAMPTZ,
     phone_number VARCHAR(30),
     kakao_id VARCHAR(100),
     is_active BOOLEAN NOT NULL DEFAULT TRUE,
@@ -118,6 +119,45 @@ CREATE TABLE local_auth_credentials (
     login_id VARCHAR(120) NOT NULL UNIQUE,
     password_hash TEXT NOT NULL,
     password_updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE signup_verification_requests (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    login_id VARCHAR(120) NOT NULL UNIQUE,
+    display_name VARCHAR(60) NOT NULL,
+    email VARCHAR(255) NOT NULL UNIQUE,
+    password_hash TEXT NOT NULL,
+    verification_code_hash TEXT NOT NULL,
+    code_expires_at TIMESTAMPTZ NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE seller_email_verification_requests (
+    user_id UUID PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+    email VARCHAR(255) NOT NULL,
+    verification_code_hash TEXT NOT NULL,
+    code_expires_at TIMESTAMPTZ NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE password_reset_requests (
+    user_id UUID PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+    email VARCHAR(255) NOT NULL,
+    verification_code_hash TEXT NOT NULL,
+    code_expires_at TIMESTAMPTZ NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE legacy_account_activation_requests (
+    user_id UUID PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+    email VARCHAR(255) NOT NULL,
+    verification_code_hash TEXT NOT NULL,
+    code_expires_at TIMESTAMPTZ NOT NULL,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
@@ -281,6 +321,10 @@ CREATE INDEX idx_user_sessions_user_id
 
 CREATE INDEX idx_seller_access_requests_status
     ON seller_access_requests(status, requested_at ASC);
+
+CREATE UNIQUE INDEX uq_users_email_ci
+    ON users(LOWER(email))
+    WHERE email IS NOT NULL;
 
 CREATE UNIQUE INDEX uq_seller_access_requests_pending
     ON seller_access_requests(user_id)

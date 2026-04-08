@@ -8,10 +8,14 @@ import next from "next";
 
 const currentDir = dirname(fileURLToPath(import.meta.url));
 const repoRoot = resolve(currentDir, "..");
+const nodeEnv = process.env.NODE_ENV?.trim() || "development";
+const envFiles = [`.env.${nodeEnv}.local`, ".env.local", `.env.${nodeEnv}`, ".env"];
 
-config({
-  path: join(repoRoot, ".env")
-});
+for (const envFile of envFiles) {
+  config({
+    path: join(repoRoot, envFile)
+  });
+}
 
 function getArg(flagName, fallback) {
   const index = process.argv.indexOf(flagName);
