@@ -72,7 +72,6 @@ type EventImageRow = {
 type EventEntryRow = {
   id: string;
   event_id: string;
-  user_id: string;
   user_display_name: string;
   user_threads_username: string | null;
   created_at: Date;
@@ -191,7 +190,6 @@ function mapEventEntry(row: EventEntryRow): EventEntryRecord {
   return {
     id: row.id,
     eventId: row.event_id,
-    userId: row.user_id,
     userDisplayName: row.user_display_name,
     userThreadsUsername: row.user_threads_username,
     enteredAt: row.created_at.toISOString(),
@@ -537,17 +535,16 @@ export async function createEventEntry(userId: string, eventId: string) {
           WITH inserted AS (
             INSERT INTO event_entries (event_id, user_id)
             VALUES ($1, $2)
-            RETURNING id, event_id, user_id, created_at
+            RETURNING id, event_id, created_at
           )
           SELECT
             inserted.id,
             inserted.event_id,
-            inserted.user_id,
             user_row.display_name AS user_display_name,
             auth.provider_username AS user_threads_username,
             inserted.created_at
           FROM inserted
-          JOIN users user_row ON user_row.id = inserted.user_id
+          JOIN users user_row ON user_row.id = $2
           LEFT JOIN auth_accounts auth
             ON auth.user_id = user_row.id
            AND auth.provider = 'THREADS'
@@ -576,7 +573,6 @@ export async function listEventEntries(sellerId: string, eventId: string) {
       SELECT
         entry_row.id,
         entry_row.event_id,
-        entry_row.user_id,
         user_row.display_name AS user_display_name,
         auth.provider_username AS user_threads_username,
         entry_row.created_at
