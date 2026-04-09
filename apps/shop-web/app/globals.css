@@ -508,6 +508,8 @@ button:disabled {
 }
 
 .card {
+  contain-intrinsic-size: 520px;
+  content-visibility: auto;
   overflow: hidden;
   display: flex;
   flex-direction: column;
