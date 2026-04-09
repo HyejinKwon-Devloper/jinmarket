@@ -9,7 +9,7 @@ type ActivationResponse = {
   ok?: boolean;
 };
 
-export function SellerAccountRecoveryPageContent() {
+export function BuyerActivationPageContent() {
   const [token, setToken] = useState("");
   const [loginId, setLoginId] = useState("");
   const [email, setEmail] = useState("");
@@ -51,7 +51,7 @@ export function SellerAccountRecoveryPageContent() {
       setCodeRequested(true);
       setMessage(response.message);
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : "계정 복구 인증번호 요청에 실패했습니다.");
+      setMessage(error instanceof Error ? error.message : "기존 구매자 계정 활성화 인증번호 요청에 실패했습니다.");
     } finally {
       setSubmitting(false);
     }
@@ -84,9 +84,9 @@ export function SellerAccountRecoveryPageContent() {
       });
 
       setMessage(response.message);
-      window.location.href = "/products";
+      window.location.href = "/";
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : "계정 복구 확인에 실패했습니다.");
+      setMessage(error instanceof Error ? error.message : "기존 구매자 계정 활성화 확인에 실패했습니다.");
     } finally {
       setSubmitting(false);
     }
@@ -94,17 +94,18 @@ export function SellerAccountRecoveryPageContent() {
 
   return (
     <section className="loginCard">
-      <p className="eyebrow">Account Recovery</p>
-      <h1>공용 계정 복구</h1>
+      <p className="eyebrow">Buyer Activation</p>
+      <h1>기존 구매자 계정 활성화</h1>
       <p className="muted">
-        판매자/구매자 공용 계정의 이메일 등록, 비밀번호 설정, 비밀번호 재설정을 진행할 수 있습니다.
+        예전에 만든 구매자 계정에 이메일이 없거나 비밀번호를 다시 잡아야 한다면, 여기에서 이메일 등록과 새 비밀번호
+        설정을 한 번에 진행할 수 있습니다.
       </p>
 
       <form onSubmit={handleRequestCode} style={{ marginTop: 20, display: "grid", gap: 12 }}>
         <div className="field">
-          <label htmlFor="admin-activation-login-id">아이디</label>
+          <label htmlFor="buyer-activation-login-id">아이디</label>
           <input
-            id="admin-activation-login-id"
+            id="buyer-activation-login-id"
             className="input"
             type="text"
             autoComplete="username"
@@ -114,9 +115,9 @@ export function SellerAccountRecoveryPageContent() {
           />
         </div>
         <div className="field">
-          <label htmlFor="admin-activation-email">이메일</label>
+          <label htmlFor="buyer-activation-email">이메일</label>
           <input
-            id="admin-activation-email"
+            id="buyer-activation-email"
             className="input"
             type="email"
             autoComplete="email"
@@ -126,7 +127,7 @@ export function SellerAccountRecoveryPageContent() {
         </div>
         <div className="actionRow">
           <button className="secondaryButton" type="submit" disabled={submitting}>
-            {submitting ? "전송 중.." : codeRequested ? "인증번호 다시 보내기" : "인증번호 보내기"}
+            {submitting ? "전송 중..." : codeRequested ? "인증번호 다시 보내기" : "인증번호 보내기"}
           </button>
         </div>
       </form>
@@ -134,9 +135,9 @@ export function SellerAccountRecoveryPageContent() {
       {codeRequested ? (
         <form onSubmit={handleVerify} style={{ marginTop: 16, display: "grid", gap: 12 }}>
           <div className="field">
-            <label htmlFor="admin-activation-code">인증번호</label>
+            <label htmlFor="buyer-activation-code">인증번호</label>
             <input
-              id="admin-activation-code"
+              id="buyer-activation-code"
               className="input"
               type="text"
               inputMode="numeric"
@@ -146,9 +147,9 @@ export function SellerAccountRecoveryPageContent() {
             />
           </div>
           <div className="field">
-            <label htmlFor="admin-activation-password">새 비밀번호</label>
+            <label htmlFor="buyer-activation-password">새 비밀번호</label>
             <input
-              id="admin-activation-password"
+              id="buyer-activation-password"
               className="input"
               type="password"
               autoComplete="new-password"
@@ -157,9 +158,9 @@ export function SellerAccountRecoveryPageContent() {
             />
           </div>
           <div className="field">
-            <label htmlFor="admin-activation-password-confirm">새 비밀번호 확인</label>
+            <label htmlFor="buyer-activation-password-confirm">새 비밀번호 확인</label>
             <input
-              id="admin-activation-password-confirm"
+              id="buyer-activation-password-confirm"
               className="input"
               type="password"
               autoComplete="new-password"
@@ -169,7 +170,7 @@ export function SellerAccountRecoveryPageContent() {
           </div>
           <div className="actionRow">
             <button className="primaryButton" type="submit" disabled={submitting}>
-              {submitting ? "복구 처리 중.." : "계정 복구 완료"}
+              {submitting ? "활성화 처리 중..." : "계정 활성화 완료"}
             </button>
           </div>
         </form>
@@ -179,5 +180,3 @@ export function SellerAccountRecoveryPageContent() {
     </section>
   );
 }
-
-export const LegacyAccountActivationPageContent = SellerAccountRecoveryPageContent;

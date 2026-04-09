@@ -128,6 +128,58 @@ export async function sendSellerPortalVerificationCode(input: {
   );
 }
 
+export async function sendBuyerEmailVerificationCode(input: {
+  email: string;
+  loginId?: string | null;
+  displayName: string;
+  code: string;
+}) {
+  const template = buildCodeMail({
+    eyebrow: "구매자 이메일 인증",
+    title: "복구 이메일 인증번호",
+    intro: `${input.displayName}님, 구매자 계정에 복구 이메일을 등록하려면 아래 인증번호를 입력해 주세요.`,
+    code: input.code,
+    loginId: input.loginId,
+    accentColor: "#0f766e"
+  });
+
+  return sendMail(
+    {
+      to: input.email,
+      subject: "[Jinmarket] 복구 이메일 인증번호 안내",
+      text: template.text,
+      html: template.html
+    },
+    `[buyer-email-verification] skipped email=${input.email} loginId=${input.loginId ?? ""} reason=smtp-not-configured`
+  );
+}
+
+export async function sendBuyerAccountActivationCode(input: {
+  email: string;
+  loginId: string;
+  displayName: string;
+  code: string;
+}) {
+  const template = buildCodeMail({
+    eyebrow: "계정 복구",
+    title: "계정 복구 인증번호",
+    intro: `${input.displayName}님, 계정에 이메일을 등록하거나 비밀번호를 설정 또는 재설정하려면 아래 인증번호를 입력해 주세요.`,
+    code: input.code,
+    loginId: input.loginId,
+    accentColor: "#0f766e"
+  });
+
+  return sendMail(
+    {
+      to: input.email,
+      subject: "[Jinmarket] 계정 복구 인증번호",
+      text: template.text,
+      html: template.html
+    },
+    `[buyer-account-activation] skipped email=${input.email} loginId=${input.loginId} reason=smtp-not-configured`
+  );
+}
+
 export async function sendPasswordResetCode(input: {
   email: string;
   loginId?: string | null;

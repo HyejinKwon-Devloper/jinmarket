@@ -20,7 +20,9 @@ import {
   hasSellerApprovalAuthCookie,
   loginWithPassword,
   logout,
+  requestBuyerAccountActivation,
   registerBuyerAccount,
+  requestBuyerEmailVerification,
   requestLegacyAccountActivation,
   requestPasswordReset,
   requestSignupVerification,
@@ -28,6 +30,8 @@ import {
   sellerApprovalAuthCookieName,
   setSessionCookie,
   setSellerApprovalAuthCookie,
+  verifyBuyerAccountActivation,
+  verifyBuyerEmailVerification,
   verifyLegacyAccountActivation,
   verifyPasswordReset,
   verifySellerEmailVerification,
@@ -88,6 +92,7 @@ const loginSchema = z.object({
 const buyerSignupSchema = z.object({
   loginId: z.string().trim().min(2).max(120),
   displayName: z.string().trim().min(2).max(60),
+  email: z.string().trim().email().max(255),
   password: z.string().min(8).max(200)
 });
 
@@ -110,6 +115,20 @@ const sellerEmailRequestSchema = z.object({
 
 const sellerEmailVerifySchema = z.object({
   code: z.string().trim().regex(/^\d{6}$/)
+});
+
+const buyerAccountActivationSchema = z.object({
+  loginId: z.string().trim().min(2).max(120),
+  email: z.string().trim().email().max(255),
+  token: z.string().trim().min(1).max(255).optional()
+});
+
+const buyerAccountActivationVerifySchema = z.object({
+  loginId: z.string().trim().min(2).max(120),
+  email: z.string().trim().email().max(255),
+  code: z.string().trim().regex(/^\d{6}$/),
+  newPassword: z.string().min(8).max(200),
+  token: z.string().trim().min(1).max(255).optional()
 });
 
 const passwordResetPortalSchema = z.enum(["SHOP", "ADMIN"]).default("SHOP");
@@ -410,6 +429,65 @@ export function createApp() {
       response.status(201).json({
         user: verifiedUser,
         message: "판매자 사이트 이메일 인증이 완료되었습니다."
+      });
+    })
+  );
+
+  app.post(
+    "/auth/buyer-email/request-code",
+    asyncHandler(async (request, response) => {
+      const user = requireAuth(request);
+      const parsed = sellerEmailRequestSchema.parse(request.body) as Parameters<
+        typeof requestBuyerEmailVerification
+      >[1];
+      await requestBuyerEmailVerification(user.id, parsed);
+      response.status(201).json({
+        ok: true,
+        message: "인증번호를 이메일로 보냈습니다. 메일함에서 6자리 코드를 확인해 주세요."
+      });
+    })
+  );
+
+  app.post(
+    "/auth/buyer-email/verify",
+    asyncHandler(async (request, response) => {
+      const user = requireAuth(request);
+      const parsed = sellerEmailVerifySchema.parse(request.body) as Parameters<
+        typeof verifyBuyerEmailVerification
+      >[1];
+      const verifiedUser = await verifyBuyerEmailVerification(user.id, parsed);
+      response.status(201).json({
+        user: verifiedUser,
+        message: "복구 이메일 등록이 완료되었습니다."
+      });
+    })
+  );
+
+  app.post(
+    "/auth/buyer-activate/request-code",
+    asyncHandler(async (request, response) => {
+      const parsed = buyerAccountActivationSchema.parse(request.body) as Parameters<
+        typeof requestBuyerAccountActivation
+      >[0];
+      await requestBuyerAccountActivation(parsed);
+      response.status(201).json({
+        ok: true,
+        message: "인증번호를 이메일로 보냈습니다. 메일함에서 6자리 코드를 확인해 주세요."
+      });
+    })
+  );
+
+  app.post(
+    "/auth/buyer-activate/verify",
+    asyncHandler(async (request, response) => {
+      const parsed = buyerAccountActivationVerifySchema.parse(request.body) as Parameters<
+        typeof verifyBuyerAccountActivation
+      >[0];
+      const session = await verifyBuyerAccountActivation(parsed);
+      setSessionCookie(response, session.sessionToken, session.expiresAt);
+      response.status(201).json({
+        user: session.user,
+        message: "기존 구매자 계정 활성화가 완료되었습니다."
       });
     })
   );

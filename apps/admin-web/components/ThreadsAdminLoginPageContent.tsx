@@ -439,7 +439,7 @@ export function AdminLoginPageContent() {
           {resetMessage ? <div className="message">{resetMessage}</div> : null}
 
           <div className="panel" style={{ marginTop: 12 }}>
-            <p className="eyebrow">Legacy Seller</p>
+            <p className="eyebrow">Account Recovery</p>
             <h2 style={{ margin: "6px 0 0", fontSize: "1.15rem" }}>기존 계정 전환</h2>
             <p className="muted" style={{ marginTop: 8 }}>
               예전 소셜 로그인 전용 판매자 계정이라면, 판매자 사이트에서 이메일 인증 후 비밀번호를 새로 만들 수

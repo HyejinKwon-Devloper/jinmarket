@@ -201,7 +201,7 @@ export default function AdminEventDetailPage() {
                     </div>
                     <div className="adminRecordItem">
                       <span className="adminMetaLabel">사용자 ID</span>
-                      <span>{entry.userId}</span>
+                      <span>{entry.userThreadsUsername ?? entry.userDisplayName}</span>
                     </div>
                   </div>
                 </article>

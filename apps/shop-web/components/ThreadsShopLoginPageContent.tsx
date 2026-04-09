@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useState } from "react";
 import { resolveSafeReturnTo } from "@jinmarket/shared";
 
@@ -27,6 +28,7 @@ export function ShopLoginPageContent() {
 
   const [signupLoginId, setSignupLoginId] = useState("");
   const [signupDisplayName, setSignupDisplayName] = useState("");
+  const [signupEmail, setSignupEmail] = useState("");
   const [signupPassword, setSignupPassword] = useState("");
   const [signupPasswordConfirm, setSignupPasswordConfirm] = useState("");
   const [signupMessage, setSignupMessage] = useState<string | null>(null);
@@ -92,6 +94,7 @@ export function ShopLoginPageContent() {
         body: JSON.stringify({
           loginId: signupLoginId,
           displayName: signupDisplayName,
+          email: signupEmail,
           password: signupPassword,
         }),
       });
@@ -247,6 +250,17 @@ export function ShopLoginPageContent() {
             {resetSubmitting ? "전송 중..." : resetRequested ? "인증번호 다시 보내기" : "인증번호 보내기"}
           </button>
         </div>
+        <div className="panel" style={{ marginTop: 4 }}>
+          <p className="muted" style={{ margin: 0 }}>
+            예전에 만든 계정이라 이메일이 아직 없거나 비밀번호를 새로 잡아야 한다면, 아래 기존 계정 활성화
+            페이지에서 이메일 등록과 비밀번호 설정을 먼저 진행해 주세요.
+          </p>
+          <div className="actionRow" style={{ marginTop: 12 }}>
+            <Link className="ghostButton" href="/activate-account">
+              기존 계정 활성화
+            </Link>
+          </div>
+        </div>
       </form>
 
       {resetRequested ? (
@@ -305,7 +319,7 @@ export function ShopLoginPageContent() {
           <p className="eyebrow">Sign Up</p>
           <h2 style={{ margin: "6px 0 0", fontSize: "1.15rem" }}>바로 가입하기</h2>
           <p className="muted" style={{ marginTop: 8 }}>
-            구매자 사이트는 이메일 인증 없이 바로 가입할 수 있습니다.
+            구매자 사이트는 이메일을 함께 등록하고 바로 가입할 수 있습니다.
           </p>
         </div>
         <div className="field">
@@ -329,6 +343,17 @@ export function ShopLoginPageContent() {
             value={signupLoginId}
             onChange={(event) => setSignupLoginId(event.target.value)}
             placeholder="@ 없이 입력"
+          />
+        </div>
+        <div className="field">
+          <label htmlFor="shop-signup-email">이메일</label>
+          <input
+            id="shop-signup-email"
+            className="input"
+            type="email"
+            autoComplete="email"
+            value={signupEmail}
+            onChange={(event) => setSignupEmail(event.target.value)}
           />
         </div>
         <div className="field">

@@ -84,6 +84,7 @@ const envSchema = z.object({
   API_PORT: z.coerce.number().default(4000),
   SESSION_COOKIE_NAME: z.string().default("jm_session"),
   SESSION_SECRET: z.string().min(1).default("change-me"),
+  BUYER_ACCOUNT_ACTIVATION_TOKEN: z.string().default(""),
   LEGACY_ACCOUNT_ACTIVATION_TOKEN: z.string().default(""),
   SELLER_APPROVAL_ADMIN_LOGIN_ID: z.string().default(""),
   SELLER_APPROVAL_ADMIN_PASSWORD: z.string().default(""),

@@ -103,7 +103,6 @@ export interface EventDetail extends EventCard {
 export interface EventEntryRecord {
   id: string;
   eventId: string;
-  userId: string;
   userDisplayName: string;
   userThreadsUsername?: string | null;
   enteredAt: string;

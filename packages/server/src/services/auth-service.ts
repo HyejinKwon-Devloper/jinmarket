@@ -12,6 +12,8 @@ import { hashPassword, hashVerificationCode, verifyPassword } from "../utils/pas
 
 import { accountIdentityJoins, accountLoginIdSql } from "./account-sql.js";
 import {
+  sendBuyerAccountActivationCode,
+  sendBuyerEmailVerificationCode,
   sendLegacyAccountActivationCode,
   sendPasswordResetCode,
   sendSellerPortalVerificationCode,
@@ -28,7 +30,7 @@ type SessionUserRow = {
   email: string | null;
   seller_email_verified_at: Date | null;
   login_id: string | null;
-  roles: string[] | null;
+  roles: string[] | string | null;
 };
 
 type LocalAccountRow = {
@@ -51,14 +53,14 @@ type PendingSignupRow = {
   code_expires_at: Date;
 };
 
-type PendingSellerEmailVerificationRow = {
+type PendingEmailVerificationRow = {
   user_id: string;
   email: string;
   verification_code_hash: string;
   code_expires_at: Date;
 };
 
-type SellerVerificationIdentityRow = {
+type EmailVerificationIdentityRow = {
   display_name: string;
   login_id: string | null;
 };
@@ -69,7 +71,7 @@ type PasswordResetTargetRow = {
   email: string | null;
   login_id: string | null;
   has_local_password: boolean;
-  roles: string[] | null;
+  roles: string[] | string | null;
 };
 
 type PasswordResetRequestRow = {
@@ -95,6 +97,29 @@ type LegacyActivationTargetRow = {
 
 type PasswordResetPortal = "SHOP" | "ADMIN";
 
+function normalizeRoleList(value: string[] | string | null | undefined) {
+  if (Array.isArray(value)) {
+    return value;
+  }
+
+  if (typeof value !== "string") {
+    return [];
+  }
+
+  const normalized = value.trim();
+
+  if (!normalized || normalized === "{}") {
+    return [];
+  }
+
+  return normalized
+    .replace(/^\{/, "")
+    .replace(/\}$/, "")
+    .split(",")
+    .map((role) => role.trim().replace(/^"|"$/g, ""))
+    .filter(Boolean);
+}
+
 function mapSessionUser(row: SessionUserRow): SessionUser {
   return {
     id: row.id,
@@ -102,7 +127,7 @@ function mapSessionUser(row: SessionUserRow): SessionUser {
     email: row.email,
     sellerEmailVerifiedAt: row.seller_email_verified_at ? row.seller_email_verified_at.toISOString() : null,
     threadsUsername: row.login_id,
-    roles: row.roles ?? []
+    roles: normalizeRoleList(row.roles)
   };
 }
 
@@ -186,6 +211,18 @@ function verifyLegacyAccountActivationToken(token?: string) {
 
   if (!token || !compareSecret(token, expectedToken)) {
     throw new AppError("유효하지 않은 계정 전환 링크입니다.", 403, "INVALID_ACTIVATION_LINK");
+  }
+}
+
+function verifyBuyerAccountActivationToken(token?: string) {
+  const expectedToken = env.BUYER_ACCOUNT_ACTIVATION_TOKEN.trim();
+
+  if (!expectedToken) {
+    return;
+  }
+
+  if (!token || !compareSecret(token, expectedToken)) {
+    throw new AppError("유효하지 않은 계정 활성화 링크입니다.", 403, "INVALID_ACTIVATION_LINK");
   }
 }
 
@@ -426,8 +463,8 @@ async function ensureEmailAvailableForUser(client: DbClient, userId: string, ema
   }
 }
 
-async function loadSellerVerificationIdentity(client: DbClient, userId: string) {
-  const result = await client.query<SellerVerificationIdentityRow>(
+async function loadEmailVerificationIdentity(client: DbClient, userId: string) {
+  const result = await client.query<EmailVerificationIdentityRow>(
     `
       SELECT
         u.display_name,
@@ -458,7 +495,7 @@ async function findPasswordResetTarget(client: DbClient, loginId: string) {
         u.email,
         ${accountLoginIdSql("account")} AS login_id,
         (account_local.user_id IS NOT NULL) AS has_local_password,
-        COALESCE(ARRAY_AGG(DISTINCT ur.role) FILTER (WHERE ur.role IS NOT NULL), '{}') AS roles
+        COALESCE(ARRAY_AGG(DISTINCT ur.role::text) FILTER (WHERE ur.role IS NOT NULL), '{}') AS roles
       FROM users u
       ${accountIdentityJoins("account", "u")}
       LEFT JOIN user_roles ur
@@ -473,8 +510,40 @@ async function findPasswordResetTarget(client: DbClient, loginId: string) {
   return result.rows[0] ?? null;
 }
 
-function isSellerPortalAccount(target: Pick<PasswordResetTargetRow, "roles">) {
-  return Boolean(target.roles?.some((role) => role === "SELLER" || role === "ADMIN"));
+function assertBuyerActivationTarget(target: PasswordResetTargetRow | null) {
+  if (!target) {
+    throw new AppError(
+      "기존 구매자 계정을 찾지 못했습니다. 입력한 아이디를 다시 확인해 주세요.",
+      404,
+      "BUYER_ACCOUNT_NOT_FOUND"
+    );
+  }
+
+  // Shared seller/buyer accounts may already have an email, so buyer activation also serves as recovery.
+  return target;
+}
+
+async function ensureBuyerActivationEmail(
+  client: DbClient,
+  target: PasswordResetTargetRow,
+  email: string
+) {
+  const storedEmail = target.email?.toLowerCase();
+
+  if (storedEmail) {
+    if (storedEmail !== email) {
+      // Keep the message explicit here because this endpoint is used for account recovery, not silent lookup.
+      throw new AppError(
+        "Please enter the email address you used to sign up or recover the account.",
+        404,
+        "BUYER_ACCOUNT_EMAIL_MISMATCH"
+      );
+    }
+
+    return;
+  }
+
+  await ensureEmailAvailableForUser(client, target.user_id, email);
 }
 
 async function findLegacyActivationTarget(client: DbClient, loginId: string) {
@@ -525,10 +594,12 @@ async function upsertLocalPassword(
 export async function registerBuyerAccount(input: {
   loginId: string;
   displayName: string;
+  email: string;
   password: string;
 }) {
   const loginId = normalizeLoginId(input.loginId);
   const displayName = normalizeDisplayName(input.displayName);
+  const email = normalizeEmail(input.email);
 
   if (input.password.length < 8 || input.password.length > 200) {
     throw new AppError("비밀번호는 8자 이상 200자 이하로 입력해 주세요.", 400);
@@ -538,11 +609,12 @@ export async function registerBuyerAccount(input: {
 
   try {
     return await withTransaction(async (client) => {
-      await ensureSignupAvailability(client, loginId);
+      await ensureSignupAvailability(client, loginId, email);
       const userId = await createLocalAccount(client, {
         loginId,
         displayName,
-        passwordHash
+        passwordHash,
+        email
       });
 
       return createSessionForUserId(client, userId);
@@ -683,7 +755,7 @@ export async function requestSellerEmailVerification(userId: string, input: { em
     await client.query("DELETE FROM seller_email_verification_requests WHERE code_expires_at < NOW()");
     await ensureEmailAvailableForUser(client, userId, email);
 
-    const currentUser = await loadSellerVerificationIdentity(client, userId);
+    const currentUser = await loadEmailVerificationIdentity(client, userId);
 
     await client.query(
       `
@@ -715,12 +787,103 @@ export async function requestSellerEmailVerification(userId: string, input: { em
   });
 }
 
+export async function requestBuyerEmailVerification(userId: string, input: { email: string }) {
+  const email = normalizeEmail(input.email);
+  const verificationCode = generateVerificationCode();
+  const verificationCodeHash = hashVerificationCode(verificationCode);
+  const expiresAt = new Date(Date.now() + env.SIGNUP_VERIFICATION_CODE_TTL_MINUTES * 60 * 1000);
+
+  const identity = await withTransaction(async (client) => {
+    await client.query("DELETE FROM seller_email_verification_requests WHERE code_expires_at < NOW()");
+    await ensureEmailAvailableForUser(client, userId, email);
+
+    const currentUser = await loadEmailVerificationIdentity(client, userId);
+
+    await client.query(
+      `
+        INSERT INTO seller_email_verification_requests (
+          user_id,
+          email,
+          verification_code_hash,
+          code_expires_at,
+          updated_at
+        )
+        VALUES ($1, $2, $3, $4, NOW())
+        ON CONFLICT (user_id) DO UPDATE
+        SET email = EXCLUDED.email,
+            verification_code_hash = EXCLUDED.verification_code_hash,
+            code_expires_at = EXCLUDED.code_expires_at,
+            updated_at = NOW()
+      `,
+      [userId, email, verificationCodeHash, expiresAt]
+    );
+
+    return currentUser;
+  });
+
+  await sendBuyerEmailVerificationCode({
+    email,
+    loginId: identity.login_id,
+    displayName: identity.display_name,
+    code: verificationCode
+  });
+}
+
+export async function requestBuyerAccountActivation(input: {
+  loginId: string;
+  email: string;
+  token?: string;
+}) {
+  verifyBuyerAccountActivationToken(input.token);
+
+  const loginId = normalizeLoginId(input.loginId);
+  const email = normalizeEmail(input.email);
+  const verificationCode = generateVerificationCode();
+  const verificationCodeHash = hashVerificationCode(verificationCode);
+  const expiresAt = new Date(Date.now() + env.SIGNUP_VERIFICATION_CODE_TTL_MINUTES * 60 * 1000);
+
+  const deliverable = await withTransaction(async (client) => {
+    await client.query("DELETE FROM password_reset_requests WHERE code_expires_at < NOW()");
+
+    const target = assertBuyerActivationTarget(await findPasswordResetTarget(client, loginId));
+
+    await ensureBuyerActivationEmail(client, target, email);
+    await client.query(
+      `
+        INSERT INTO password_reset_requests (
+          user_id,
+          email,
+          verification_code_hash,
+          code_expires_at,
+          updated_at
+        )
+        VALUES ($1, $2, $3, $4, NOW())
+        ON CONFLICT (user_id) DO UPDATE
+        SET email = EXCLUDED.email,
+            verification_code_hash = EXCLUDED.verification_code_hash,
+            code_expires_at = EXCLUDED.code_expires_at,
+            updated_at = NOW()
+      `,
+      [target.user_id, email, verificationCodeHash, expiresAt]
+    );
+
+    return {
+      email,
+      loginId: target.login_id ?? loginId,
+      displayName: target.display_name,
+      code: verificationCode
+    };
+  });
+
+  await sendBuyerAccountActivationCode(deliverable);
+}
+
 export async function verifySellerEmailVerification(userId: string, input: { code: string }) {
   const code = normalizeVerificationCode(input.code);
 
   try {
     return await withTransaction(async (client) => {
-      const pendingResult = await client.query<PendingSellerEmailVerificationRow>(
+      const pendingResult = await client.query<PendingEmailVerificationRow>(
         `
           SELECT
             user_id,
@@ -773,6 +936,135 @@ export async function verifySellerEmailVerification(userId: string, input: { cod
   }
 }
 
+export async function verifyBuyerAccountActivation(input: {
+  loginId: string;
+  email: string;
+  code: string;
+  newPassword: string;
+  token?: string;
+}) {
+  verifyBuyerAccountActivationToken(input.token);
+
+  const loginId = normalizeLoginId(input.loginId);
+  const email = normalizeEmail(input.email);
+  const code = normalizeVerificationCode(input.code);
+  assertPasswordLength(input.newPassword);
+
+  const passwordHash = await hashPassword(input.newPassword);
+
+  return withTransaction(async (client) => {
+    const target = assertBuyerActivationTarget(await findPasswordResetTarget(client, loginId));
+    await ensureBuyerActivationEmail(client, target, email);
+    const pendingResult = await client.query<PasswordResetRequestRow>(
+      `
+        SELECT
+          user_id,
+          email,
+          verification_code_hash,
+          code_expires_at
+        FROM password_reset_requests
+        WHERE user_id = $1
+        FOR UPDATE
+      `,
+      [target.user_id]
+    );
+
+    const pending = pendingResult.rows[0];
+
+    if (!pending || pending.email.toLowerCase() !== email) {
+      throw new AppError(
+        "기존 구매자 계정 활성화 요청을 찾지 못했습니다. 인증번호를 다시 요청해 주세요.",
+        404,
+        "BUYER_ACTIVATION_REQUEST_NOT_FOUND"
+      );
+    }
+
+    if (pending.code_expires_at.getTime() < Date.now()) {
+      await client.query("DELETE FROM password_reset_requests WHERE user_id = $1", [target.user_id]);
+      throw new AppError("인증번호가 만료되었습니다. 다시 인증번호를 요청해 주세요.", 410);
+    }
+
+    if (!compareSecret(hashVerificationCode(code), pending.verification_code_hash)) {
+      throw new AppError("인증번호가 올바르지 않습니다.", 400, "INVALID_VERIFICATION_CODE");
+    }
+
+    await upsertLocalPassword(client, {
+      userId: target.user_id,
+      loginId,
+      passwordHash
+    });
+    await client.query(
+      `
+        UPDATE users
+        SET email = $2,
+            updated_at = NOW()
+        WHERE id = $1
+      `,
+      [target.user_id, email]
+    );
+    await client.query("DELETE FROM password_reset_requests WHERE user_id = $1", [target.user_id]);
+
+    return createSessionForUserId(client, target.user_id);
+  });
+}
+
+export async function verifyBuyerEmailVerification(userId: string, input: { code: string }) {
+  const code = normalizeVerificationCode(input.code);
+
+  try {
+    return await withTransaction(async (client) => {
+      const pendingResult = await client.query<PendingEmailVerificationRow>(
+        `
+          SELECT
+            user_id,
+            email,
+            verification_code_hash,
+            code_expires_at
+          FROM seller_email_verification_requests
+          WHERE user_id = $1
+          FOR UPDATE
+        `,
+        [userId]
+      );
+
+      const pending = pendingResult.rows[0];
+
+      if (!pending) {
+        throw new AppError("인증번호 요청 내역을 찾을 수 없습니다. 다시 인증번호를 요청해 주세요.", 404);
+      }
+
+      if (pending.code_expires_at.getTime() < Date.now()) {
+        await client.query("DELETE FROM seller_email_verification_requests WHERE user_id = $1", [userId]);
+        throw new AppError("인증번호가 만료되었습니다. 다시 인증번호를 요청해 주세요.", 410);
+      }
+
+      if (!compareSecret(hashVerificationCode(code), pending.verification_code_hash)) {
+        throw new AppError("인증번호가 올바르지 않습니다.", 400, "INVALID_VERIFICATION_CODE");
+      }
+
+      await ensureEmailAvailableForUser(client, userId, pending.email);
+      await client.query(
+        `
+          UPDATE users
+          SET email = $2,
+              updated_at = NOW()
+          WHERE id = $1
+        `,
+        [userId, pending.email]
+      );
+      await client.query("DELETE FROM seller_email_verification_requests WHERE user_id = $1", [userId]);
+
+      return loadSessionUserById(client, userId);
+    });
+  } catch (error) {
+    if (isPgUniqueError(error)) {
+      throw new AppError("이미 가입한 이메일입니다.", 409, "EMAIL_ALREADY_EXISTS");
+    }
+
+    throw error;
+  }
+}
+
 export async function requestPasswordReset(input: {
   loginId: string;
   email: string;
@@ -794,8 +1086,12 @@ export async function requestPasswordReset(input: {
       return null;
     }
 
-    if (portal === "SHOP" && isSellerPortalAccount(target)) {
-      return null;
+    if (portal === "SHOP" && target.has_local_password && !target.email) {
+      throw new AppError(
+        "이 계정은 가입 당시 이메일이 등록되지 않아 비밀번호 재설정 메일을 보낼 수 없습니다. 기존 계정 활성화 페이지에서 이메일 등록과 비밀번호 설정을 먼저 진행해 주세요.",
+        409,
+        "PASSWORD_RESET_EMAIL_NOT_REGISTERED"
+      );
     }
 
     const isInitialBuyerPasswordSetup = portal === "SHOP" && !target.has_local_password && !target.email;
@@ -1035,9 +1331,7 @@ export async function verifyPasswordReset(input: {
       throw new AppError("비밀번호 재설정 요청을 찾을 수 없습니다. 다시 시도해 주세요.", 404);
     }
 
-    if (portal === "SHOP" && isSellerPortalAccount(target)) {
-      throw new AppError("비밀번호 재설정 요청을 찾을 수 없습니다. 다시 시도해 주세요.", 404);
-    }
+    // Shared seller/buyer accounts can also reset from the buyer portal as long as the email matches.
 
     const isInitialBuyerPasswordSetup = portal === "SHOP" && !target.has_local_password && !target.email;
     const hasMatchingStoredEmail = Boolean(target.email && target.email.toLowerCase() === email);
