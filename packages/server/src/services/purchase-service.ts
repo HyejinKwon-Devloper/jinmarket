@@ -1,8 +1,16 @@
 import { withTransaction } from "../../../db/src/index.js";
-import type { GamePlayResult, OrderRecord } from "@jinmarket/shared";
+import type {
+  GameAttemptRecord,
+  GamePlayResult,
+  OrderRecord
+} from "@jinmarket/shared";
 
 import { AppError, isPgUniqueError } from "../errors.js";
-import { decideRpsResult, randomChoice } from "../utils/rps.js";
+import {
+  decideRpsResult,
+  randomChoice,
+  summarizeGamePurchaseSeries
+} from "../utils/rps.js";
 
 import { accountIdentityJoins, accountLoginIdSql } from "./account-sql.js";
 import { sendSellerOrderNotification } from "./mail-service.js";
@@ -59,6 +67,60 @@ function mapOrder(row: OrderRow): OrderRecord {
     status: row.status,
     orderedAt: row.ordered_at.toISOString()
   };
+}
+
+function mapAttempt(row: AttemptRow): GameAttemptRecord {
+  return {
+    id: row.id,
+    productId: row.product_id,
+    userId: row.user_id,
+    playerChoice: row.player_choice,
+    systemChoice: row.system_choice,
+    result: row.result,
+    playedAt: row.played_at.toISOString()
+  };
+}
+
+function formatProgressLabel(wins: number, losses: number, draws: number) {
+  const parts = [`${wins}승`, `${losses}패`];
+
+  if (draws > 0) {
+    parts.push(`무승부 ${draws}회`);
+  }
+
+  return parts.join(" ");
+}
+
+function buildGamePurchaseMessage(args: {
+  wins: number;
+  losses: number;
+  draws: number;
+  targetWins: number;
+  latestResult: GameAttemptRecord["result"];
+  isFreeShare: boolean;
+}) {
+  const progressLabel = formatProgressLabel(args.wins, args.losses, args.draws);
+  const completionLabel = args.isFreeShare ? "나눔 신청" : "구매";
+
+  if (args.wins >= args.targetWins) {
+    return args.isFreeShare
+      ? `${args.targetWins}승을 먼저 채워 무료 나눔 신청이 완료되었습니다. 판매자가 전달 방법을 위해 직접 연락할 예정입니다.`
+      : `${args.targetWins}승을 먼저 채워 구매가 완료되었습니다. 판매자가 계좌이체 안내를 위해 직접 연락할 예정입니다.`;
+  }
+
+  if (args.losses >= args.targetWins) {
+    return `졌습니다. 현재 ${progressLabel}입니다. ${args.targetWins}패가 되어 이번 도전은 종료되었습니다.`;
+  }
+
+  if (args.latestResult === "DRAW") {
+    return `비겼습니다. 현재 ${progressLabel}입니다. 비긴 판은 제외되니 다시 진행해 주세요.`;
+  }
+
+  if (args.latestResult === "WIN") {
+    return `이겼습니다. 현재 ${progressLabel}입니다. ${args.targetWins}승을 먼저 채우면 ${completionLabel}이 확정됩니다.`;
+  }
+
+  return `졌습니다. 현재 ${progressLabel}입니다. ${args.targetWins}패가 되기 전까지 다시 도전할 수 있습니다.`;
 }
 
 function assertProductOnSale(product: LockedProductRow) {
@@ -240,28 +302,32 @@ export async function playGamePurchase(
     assertProductOnSale(product);
 
     if (product.purchase_type !== "GAME_CHANCE") {
-      throw new AppError("게임 추첨 상품이 아닙니다.", 400);
+      throw new AppError("가위바위보 판매 상품이 아닙니다.", 400);
     }
 
     if (product.seller_id === userId) {
       throw new AppError("본인이 등록한 상품에는 참여할 수 없습니다.", 400);
     }
 
-    const existingAttempt = await client.query(
+    const existingAttempts = await client.query<AttemptRow>(
       `
-        SELECT id
+        SELECT id, product_id, user_id, player_choice, system_choice, result, played_at
         FROM game_purchase_attempts
         WHERE product_id = $1 AND user_id = $2
+        ORDER BY played_at ASC, created_at ASC
       `,
       [productId, userId]
     );
 
-    if (existingAttempt.rows[0]) {
-      throw new AppError("이 상품에는 이미 가위바위보 참여를 완료했습니다.", 409);
+    const attemptsBeforePlay = existingAttempts.rows.map(mapAttempt);
+    const progressBeforePlay = summarizeGamePurchaseSeries(attemptsBeforePlay);
+
+    if (!progressBeforePlay.canContinue) {
+      throw new AppError("이 상품의 가위바위보 도전은 이미 종료되었습니다.", 409);
     }
 
     const systemChoice = randomChoice();
-    const result = decideRpsResult(playerChoice, systemChoice);
+    const roundResult = decideRpsResult(playerChoice, systemChoice);
 
     const attemptResult = await client.query<AttemptRow>(
       `
@@ -276,27 +342,25 @@ export async function playGamePurchase(
         VALUES ($1, $2, 'ROCK_PAPER_SCISSORS', $3, $4, $5)
         RETURNING id, product_id, user_id, player_choice, system_choice, result, played_at
       `,
-      [productId, userId, playerChoice, systemChoice, result]
+      [productId, userId, playerChoice, systemChoice, roundResult]
     );
 
-    const mappedAttempt = {
-      id: attemptResult.rows[0].id,
-      productId: attemptResult.rows[0].product_id,
-      userId: attemptResult.rows[0].user_id,
-      playerChoice: attemptResult.rows[0].player_choice,
-      systemChoice: attemptResult.rows[0].system_choice,
-      result: attemptResult.rows[0].result,
-      playedAt: attemptResult.rows[0].played_at.toISOString()
-    };
+    const mappedAttempt = mapAttempt(attemptResult.rows[0]);
+    const progress = summarizeGamePurchaseSeries([...attemptsBeforePlay, mappedAttempt]);
 
-    if (result !== "WIN") {
+    if (progress.wins < progress.targetWins) {
       return {
         attempt: mappedAttempt,
         purchased: false as const,
-        message:
-          result === "DRAW"
-            ? "비겼습니다. 현재 정책상 무승부는 구매 실패로 처리됩니다."
-            : "아쉽지만 이번 게임은 실패했습니다."
+        progress,
+        message: buildGamePurchaseMessage({
+          wins: progress.wins,
+          losses: progress.losses,
+          draws: progress.draws,
+          targetWins: progress.targetWins,
+          latestResult: mappedAttempt.result,
+          isFreeShare: product.is_free_share
+        })
       };
     }
 
@@ -350,9 +414,15 @@ export async function playGamePurchase(
         purchased: true as const,
         orderRow: orderResult.rows[0],
         isFreeShare: product.is_free_share,
-        message: product.is_free_share
-          ? "가위바위보에 승리해 무료 나눔 요청이 완료되었습니다. 판매자가 전달 방법 안내를 위해 직접 연락할 예정입니다."
-          : "가위바위보에 승리해 구매가 완료되었습니다. 판매자가 계좌이체 안내를 위해 직접 연락할 예정입니다."
+        progress,
+        message: buildGamePurchaseMessage({
+          wins: progress.wins,
+          losses: progress.losses,
+          draws: progress.draws,
+          targetWins: progress.targetWins,
+          latestResult: mappedAttempt.result,
+          isFreeShare: product.is_free_share
+        })
       };
     } catch (error) {
       if (isPgUniqueError(error)) {
@@ -373,6 +443,7 @@ export async function playGamePurchase(
     attempt: result.attempt,
     purchased: true,
     order: mapOrder(result.orderRow),
+    progress: result.progress,
     message: result.message
   };
 }

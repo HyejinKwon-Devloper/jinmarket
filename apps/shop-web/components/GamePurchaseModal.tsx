@@ -2,18 +2,20 @@
 
 import Image from "next/image";
 import { useEffect, useMemo, useState } from "react";
-import type { GameChoice, GamePlayResult } from "@jinmarket/shared";
+import {
+  GAME_PURCHASE_REQUIRED_WINS,
+  type GameChoice,
+  type GamePlayResult,
+  type GamePurchaseProgress
+} from "@jinmarket/shared";
 
 const choiceOrder: GameChoice[] = ["SCISSORS", "ROCK", "PAPER"];
 
-const choiceMeta: Record<
-  GameChoice,
-  { label: string; image: string; caption: string }
-> = {
+const choiceMeta: Record<GameChoice, { label: string; image: string; caption: string }> = {
   SCISSORS: {
     label: "가위",
     image: "/scissor.png",
-    caption: "빠르게 베는 한 수"
+    caption: "빠르게 먼저 끊어내기"
   },
   ROCK: {
     label: "바위",
@@ -23,7 +25,7 @@ const choiceMeta: Record<
   PAPER: {
     label: "보",
     image: "/paper.jpg",
-    caption: "부드럽게 덮어 승리"
+    caption: "부드럽게 감싸기"
   }
 };
 
@@ -36,26 +38,48 @@ const announcerThemes = [
   {
     image: "/scissor_obanai.png",
     name: "오바나이",
-    intro: "신중하게 골라. 기회는 한 번뿐이야."
+    intro: "집중해서 골라. 기회는 잘 써야 해."
   },
   {
     image: "/paper_kyo.png",
-    name: "렌고쿠",
-    intro: "열정적으로 승부를 시작하자!"
+    name: "쿄쥬로",
+    intro: "정정당당하게 시작해보자!"
   }
 ] as const;
+
+type ModalPhase = "intro" | "select" | "loading" | "result";
 
 function hashSeed(input: string) {
   return Array.from(input).reduce((sum, char) => sum + char.charCodeAt(0), 0);
 }
 
-type ModalPhase = "intro" | "select" | "loading" | "result";
+function formatProgressLabel(progress: GamePurchaseProgress) {
+  const parts = [`${progress.wins}승`, `${progress.losses}패`];
+
+  if (progress.draws > 0) {
+    parts.push(`무승부 ${progress.draws}회`);
+  }
+
+  return parts.join(" / ");
+}
+
+function formatResultLabel(result: GamePlayResult["attempt"]["result"]) {
+  switch (result) {
+    case "WIN":
+      return "승리";
+    case "LOSE":
+      return "패배";
+    default:
+      return "무승부";
+  }
+}
 
 export function GamePurchaseModal({
   isOpen,
   seed,
   productTitle,
   isFreeShare,
+  currentProgress,
   onClose,
   onPlay
 }: {
@@ -63,6 +87,7 @@ export function GamePurchaseModal({
   seed: string;
   productTitle: string;
   isFreeShare: boolean;
+  currentProgress: GamePurchaseProgress | null;
   onClose: () => void;
   onPlay: (choice: GameChoice) => Promise<GamePlayResult>;
 }) {
@@ -76,6 +101,10 @@ export function GamePurchaseModal({
     () => announcerThemes[hashSeed(seed) % announcerThemes.length],
     [seed]
   );
+
+  const activeProgress = result?.progress ?? currentProgress;
+  const progressLabel = activeProgress ? formatProgressLabel(activeProgress) : "0승 / 0패";
+  const completionLabel = isFreeShare ? "나눔 신청" : "구매";
 
   useEffect(() => {
     if (!isOpen) {
@@ -115,13 +144,6 @@ export function GamePurchaseModal({
     return null;
   }
 
-  const resultLabel =
-    result?.attempt.result === "WIN"
-      ? "승리"
-      : result?.attempt.result === "LOSE"
-        ? "패배"
-        : "무승부";
-
   async function handleConfirm() {
     if (!selectedChoice || isSubmitting) {
       return;
@@ -143,16 +165,30 @@ export function GamePurchaseModal({
       setResult(nextResult);
       setPhase("result");
     } catch (playError) {
-      setError(
-        playError instanceof Error
-          ? playError.message
-          : "가위바위보 진행에 실패했습니다."
-      );
+      setError(playError instanceof Error ? playError.message : "가위바위보 진행에 실패했습니다.");
       setPhase("select");
     } finally {
       setIsSubmitting(false);
     }
   }
+
+  function startNextRound() {
+    setSelectedChoice(null);
+    setResult(null);
+    setError(null);
+    setPhase("select");
+  }
+
+  const speechMessage =
+    phase === "intro"
+      ? activeProgress?.totalRounds
+        ? `현재 전적은 ${progressLabel}예요. 비기면 다시 하고, 먼저 ${GAME_PURCHASE_REQUIRED_WINS}승하면 ${completionLabel}이 확정됩니다.`
+        : `비기면 다시 하고, 먼저 ${GAME_PURCHASE_REQUIRED_WINS}승하면 ${completionLabel}이 확정됩니다. 승패가 갈린 판 기준으로 최대 3판이에요.`
+      : phase === "select"
+        ? "가위, 바위, 보 중 하나를 골라 주세요."
+        : phase === "loading"
+          ? "상대 선택을 정하고 있어요. 잠깐만 기다려 주세요."
+          : result?.message ?? "";
 
   return (
     <div
@@ -185,7 +221,7 @@ export function GamePurchaseModal({
             disabled={phase === "loading"}
             aria-label="가위바위보 팝업 닫기"
           >
-            ×
+            x
           </button>
         </div>
 
@@ -201,30 +237,22 @@ export function GamePurchaseModal({
           </div>
           <div className="rpsSpeechBubble">
             <strong>{theme.name}</strong>
-            <p>
-              {phase === "intro"
-                ? `${theme.intro} ${isFreeShare ? "이기면 바로 나눔 신청이 완료돼." : "이기면 바로 구매가 확정돼."}`
-                : phase === "select"
-                  ? "가위를 낼지, 바위를 낼지, 보를 낼지 정하고 확정해."
-                  : phase === "loading"
-                    ? "상대가 손을 고르고 있어. 잠깐만 기다려."
-                    : result?.message}
-            </p>
+            <p>{`${theme.intro} ${speechMessage}`}</p>
           </div>
         </div>
 
         <div className="rpsMetaBar">
           <span className="badge">상품 {productTitle}</span>
-          <span className="badge">
-            {isFreeShare ? "승리 시 무료 나눔 신청" : "승리 시 즉시 구매 확정"}
-          </span>
-          <span className="badge">무승부도 이번 기회 종료</span>
+          <span className="badge">{GAME_PURCHASE_REQUIRED_WINS}승 선착</span>
+          <span className="badge">비기면 재경기</span>
+          {activeProgress ? <span className="badge">현재 {progressLabel}</span> : null}
         </div>
 
         {phase === "intro" ? (
           <div className="rpsActionArea">
             <p className="muted">
-              선택은 한 번만 가능하며, 결과는 서버에서 바로 판정됩니다.
+              결과는 서버에서 바로 확정됩니다. 먼저 {GAME_PURCHASE_REQUIRED_WINS}승하면{" "}
+              {completionLabel} 성공, {GAME_PURCHASE_REQUIRED_WINS}패면 도전 종료입니다.
             </p>
             <div className="actionRow">
               <button
@@ -232,14 +260,14 @@ export function GamePurchaseModal({
                 className="primaryButton"
                 onClick={() => setPhase("select")}
               >
-                승부 시작하기
+                {activeProgress?.totalRounds ? "다음 판 시작" : "게임 시작하기"}
               </button>
               <button
                 type="button"
                 className="ghostButton"
                 onClick={onClose}
               >
-                나중에 도전
+                나중에 하기
               </button>
             </div>
           </div>
@@ -280,9 +308,7 @@ export function GamePurchaseModal({
                 disabled={!selectedChoice || isSubmitting}
                 onClick={handleConfirm}
               >
-                {selectedChoice
-                  ? `${choiceMeta[selectedChoice].label}로 확정`
-                  : "손을 먼저 골라주세요"}
+                {selectedChoice ? `${choiceMeta[selectedChoice].label}로 확정` : "먼저 하나를 골라 주세요"}
               </button>
               <button
                 type="button"
@@ -290,7 +316,7 @@ export function GamePurchaseModal({
                 disabled={isSubmitting}
                 onClick={() => setPhase("intro")}
               >
-                다시 보기
+                규칙 다시 보기
               </button>
             </div>
             {error ? <div className="message">{error}</div> : null}
@@ -317,7 +343,7 @@ export function GamePurchaseModal({
               <div className="rpsVersusCard opponent">
                 <span className="rpsVersusLabel">상대 선택</span>
                 <div className="rpsOpponentPlaceholder">?</div>
-                <strong>판정 중...</strong>
+                <strong>정하는 중...</strong>
               </div>
             </div>
           </div>
@@ -352,22 +378,47 @@ export function GamePurchaseModal({
             </div>
 
             <div className={`rpsResultBanner ${result.attempt.result.toLowerCase()}`}>
-              <span className="badge">{resultLabel}</span>
+              <span className="badge">{formatResultLabel(result.attempt.result)}</span>
               <strong>{result.message}</strong>
             </div>
 
+            <p className="muted">현재 전적: {formatProgressLabel(result.progress)}</p>
+
             <div className="actionRow">
-              <button
-                type="button"
-                className="primaryButton"
-                onClick={onClose}
-              >
-                {result.purchased
-                  ? isFreeShare
-                    ? "나눔 신청 완료"
-                    : "구매 완료"
-                  : "확인"}
-              </button>
+              {result.purchased ? (
+                <button
+                  type="button"
+                  className="primaryButton"
+                  onClick={onClose}
+                >
+                  {isFreeShare ? "나눔 신청 완료" : "구매 완료"}
+                </button>
+              ) : result.progress.canContinue ? (
+                <>
+                  <button
+                    type="button"
+                    className="primaryButton"
+                    onClick={startNextRound}
+                  >
+                    {result.attempt.result === "DRAW" ? "다시 하기" : "다음 판 하기"}
+                  </button>
+                  <button
+                    type="button"
+                    className="ghostButton"
+                    onClick={onClose}
+                  >
+                    여기까지 보기
+                  </button>
+                </>
+              ) : (
+                <button
+                  type="button"
+                  className="primaryButton"
+                  onClick={onClose}
+                >
+                  확인
+                </button>
+              )}
             </div>
           </div>
         ) : null}

@@ -13,6 +13,9 @@ export type GameChoice = (typeof gameChoices)[number];
 export const gameResults = ["WIN", "LOSE", "DRAW"] as const;
 export type GameResult = (typeof gameResults)[number];
 
+export const GAME_PURCHASE_REQUIRED_WINS = 2;
+export const GAME_PURCHASE_MAX_DECISIVE_ROUNDS = GAME_PURCHASE_REQUIRED_WINS * 2 - 1;
+
 export const orderStatuses = [
   "PENDING_CONTACT",
   "CONTACTED",
@@ -125,6 +128,7 @@ export interface ProductDetail extends ProductCard {
   sellerId: string | null;
   images: ProductImage[];
   myGameAttempt?: GameAttemptRecord | null;
+  myGameProgress?: GamePurchaseProgress | null;
   soldOrder?: OrderRecord | null;
 }
 
@@ -137,6 +141,18 @@ export interface GameAttemptRecord {
   systemChoice: GameChoice;
   result: GameResult;
   playedAt: string;
+}
+
+export interface GamePurchaseProgress {
+  wins: number;
+  losses: number;
+  draws: number;
+  totalRounds: number;
+  decisiveRounds: number;
+  targetWins: number;
+  maxDecisiveRounds: number;
+  isComplete: boolean;
+  canContinue: boolean;
 }
 
 export interface OrderRecord {
@@ -257,6 +273,7 @@ export interface GamePlayResult {
   purchased: boolean;
   order?: OrderRecord;
   message: string;
+  progress: GamePurchaseProgress;
 }
 
 export interface CreatePriceOfferInput {

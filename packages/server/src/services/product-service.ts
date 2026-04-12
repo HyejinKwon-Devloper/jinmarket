@@ -19,6 +19,7 @@ import type {
 
 import { AppError, isPgUniqueError } from "../errors.js";
 import { env } from "../env.js";
+import { summarizeGamePurchaseSeries } from "../utils/rps.js";
 
 import { accountIdentityJoins, accountLoginIdSql } from "./account-sql.js";
 
@@ -548,10 +549,14 @@ export async function getProductDetail(productId: string, viewerId?: string | nu
           FROM game_purchase_attempts gpa
           JOIN users u ON u.id = gpa.user_id
           WHERE gpa.product_id = $1 AND gpa.user_id = $2
+          ORDER BY gpa.played_at DESC, gpa.created_at DESC
         `,
         [productId, viewerId]
       )
     : { rows: [] as GameAttemptRow[] };
+
+  const myAttempts = attemptResult.rows.map(mapAttempt);
+  const myGameProgress = viewerId ? summarizeGamePurchaseSeries(myAttempts) : null;
 
   const orderResult = await query<OrderRow>(
     `
@@ -590,7 +595,8 @@ export async function getProductDetail(productId: string, viewerId?: string | nu
     ...mapProductCard(product),
     sellerId: product.is_anonymous && product.seller_id !== viewerId ? null : product.seller_id,
     images: imagesResult.rows.map(mapProductImage),
-    myGameAttempt: attemptResult.rows[0] ? mapAttempt(attemptResult.rows[0]) : null,
+    myGameAttempt: myAttempts[0] ?? null,
+    myGameProgress,
     soldOrder
   };
 }

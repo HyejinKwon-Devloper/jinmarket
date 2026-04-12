@@ -283,8 +283,7 @@ CREATE TABLE game_purchase_attempts (
     system_choice rps_choice NOT NULL,
     result game_result NOT NULL,
     played_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    UNIQUE (product_id, user_id)
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
 CREATE TABLE price_offers (

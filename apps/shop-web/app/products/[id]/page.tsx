@@ -28,6 +28,49 @@ function formatSaleWindow(item: ProductDetail) {
   return `${start} ~ ${formatDateTime(item.saleEndsAt)}`;
 }
 
+function formatGameResult(result: GamePlayResult["attempt"]["result"]) {
+  switch (result) {
+    case "WIN":
+      return "승리";
+    case "LOSE":
+      return "패배";
+    default:
+      return "무승부";
+  }
+}
+
+function formatGameProgress(progress: NonNullable<ProductDetail["myGameProgress"]>) {
+  const parts = [`${progress.wins}승`, `${progress.losses}패`];
+
+  if (progress.draws > 0) {
+    parts.push(`무승부 ${progress.draws}회`);
+  }
+
+  return parts.join(" · ");
+}
+
+function buildGameProgressMessage(item: ProductDetail) {
+  if (!item.myGameProgress) {
+    return null;
+  }
+
+  const summary = formatGameProgress(item.myGameProgress);
+
+  if (item.myGameProgress.isComplete) {
+    if (item.myGameProgress.wins >= item.myGameProgress.targetWins) {
+      return `가위바위보 전적: ${summary}. ${item.isFreeShare ? "나눔 신청" : "구매"}이 확정되었습니다.`;
+    }
+
+    return `가위바위보 전적: ${summary}. ${item.myGameProgress.targetWins}패로 도전이 종료되었습니다.`;
+  }
+
+  if (!item.myGameAttempt) {
+    return `가위바위보 전적: ${summary}.`;
+  }
+
+  return `가위바위보 전적: ${summary}. 최근 결과는 ${formatGameResult(item.myGameAttempt.result)}입니다.`;
+}
+
 export default function ProductDetailPage() {
   const params = useParams<{ id: string }>();
   const productId = Array.isArray(params.id) ? params.id[0] : params.id;
@@ -107,9 +150,15 @@ export default function ProductDetailPage() {
   const isPurchaseCompleted = Boolean(item.soldOrder);
   const isActionLocked = !isOpen || !isWithinSalePeriod || isPurchaseCompleted;
   const isSeller = user?.id === item.sellerId;
+  const gameProgress = item.myGameProgress ?? null;
+  const gameProgressMessage = buildGameProgressMessage(item);
   const canInstantBuy = Boolean(user) && !isActionLocked && item.purchaseType === "INSTANT_BUY" && !isSeller;
   const canPlayGame =
-    Boolean(user) && !isActionLocked && item.purchaseType === "GAME_CHANCE" && !isSeller && !item.myGameAttempt;
+    Boolean(user) &&
+    !isActionLocked &&
+    item.purchaseType === "GAME_CHANCE" &&
+    !isSeller &&
+    !(gameProgress?.isComplete ?? false);
   const canOfferPrice = Boolean(user) && !isActionLocked && item.allowPriceOffer && !isSeller;
   const saleLabel = item.isFreeShare ? "무료 나눔" : "구매";
   const contactMessage = item.isFreeShare
@@ -222,6 +271,7 @@ export default function ProductDetailPage() {
 
         {item.purchaseType === "GAME_CHANCE" && !isSeller ? (
           <div style={{ marginTop: 16 }}>
+            {gameProgressMessage ? <div className="message">{gameProgressMessage}</div> : null}
             {isActionLocked ? (
               <div className="actionRow">
                 <button className="secondaryButton" disabled type="button">
@@ -237,7 +287,13 @@ export default function ProductDetailPage() {
             ) : canPlayGame ? (
               <>
                 <button className="secondaryButton" disabled={showGameModal} onClick={() => setShowGameModal(true)}>
-                  {item.isFreeShare ? "가위바위보로 무료 나눔 도전" : "가위바위보로 구매 도전"}
+                  {gameProgress?.totalRounds
+                    ? item.isFreeShare
+                      ? `가위바위보 이어서 도전하기 (${gameProgress.wins}승 ${gameProgress.losses}패)`
+                      : `가위바위보 이어서 구매 도전 (${gameProgress.wins}승 ${gameProgress.losses}패)`
+                    : item.isFreeShare
+                      ? "가위바위보로 무료 나눔 도전"
+                      : "가위바위보로 구매 도전"}
                 </button>
               </>
             ) : null}
@@ -325,9 +381,10 @@ export default function ProductDetailPage() {
           </div>
         ) : null}
 
-        {item.myGameAttempt ? (
+        {item.myGameAttempt && !gameProgressMessage ? (
           <div className="message">
-            최근 가위바위보 결과: {gameChoiceLabels[item.myGameAttempt.playerChoice]} / 상대 {gameChoiceLabels[item.myGameAttempt.systemChoice]} / {item.myGameAttempt.result}
+            최근 가위바위보 결과: {gameChoiceLabels[item.myGameAttempt.playerChoice]} / 상대{" "}
+            {gameChoiceLabels[item.myGameAttempt.systemChoice]} / {formatGameResult(item.myGameAttempt.result)}
           </div>
         ) : null}
 
@@ -347,6 +404,7 @@ export default function ProductDetailPage() {
         seed={productId}
         productTitle={item.title}
         isFreeShare={item.isFreeShare}
+        currentProgress={gameProgress}
         onClose={() => setShowGameModal(false)}
         onPlay={async (choice: GameChoice) => {
           const result = await requestJson<GamePlayResult>(`/products/${productId}/game-purchase/play`, {
