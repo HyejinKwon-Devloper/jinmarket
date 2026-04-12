@@ -18,6 +18,8 @@ type VerificationResponse = {
   message: string;
 };
 
+const PASSWORD_RULE_HINT = "8자 이상 200자 이하로 입력해 주세요.";
+
 export function AdminLoginPageContent() {
   const [targetUrl, setTargetUrl] = useState("/products");
   const [loginId, setLoginId] = useState("");
@@ -413,9 +415,14 @@ export function AdminLoginPageContent() {
                   className="input"
                   type="password"
                   autoComplete="new-password"
+                  minLength={8}
+                  maxLength={200}
                   value={resetNewPassword}
                   onChange={(event) => setResetNewPassword(event.target.value)}
                 />
+                <p className="muted" style={{ margin: 0, fontSize: "0.9em" }}>
+                  {PASSWORD_RULE_HINT}
+                </p>
               </div>
               <div className="field">
                 <label htmlFor="admin-reset-password-confirm">새 비밀번호 확인</label>
@@ -424,6 +431,8 @@ export function AdminLoginPageContent() {
                   className="input"
                   type="password"
                   autoComplete="new-password"
+                  minLength={8}
+                  maxLength={200}
                   value={resetNewPasswordConfirm}
                   onChange={(event) => setResetNewPasswordConfirm(event.target.value)}
                 />
@@ -575,9 +584,14 @@ export function AdminLoginPageContent() {
                 className="input"
                 type="password"
                 autoComplete="new-password"
+                minLength={8}
+                maxLength={200}
                 value={signupPassword}
                 onChange={(event) => setSignupPassword(event.target.value)}
               />
+              <p className="muted" style={{ margin: 0, fontSize: "0.9em" }}>
+                {PASSWORD_RULE_HINT}
+              </p>
             </div>
             <div className="field">
               <label htmlFor="admin-signup-password-confirm">비밀번호 확인</label>
@@ -586,6 +600,8 @@ export function AdminLoginPageContent() {
                 className="input"
                 type="password"
                 autoComplete="new-password"
+                minLength={8}
+                maxLength={200}
                 value={signupPasswordConfirm}
                 onChange={(event) => setSignupPasswordConfirm(event.target.value)}
               />

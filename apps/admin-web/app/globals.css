@@ -255,33 +255,76 @@ button:disabled {
 .legalPage {
   max-width: 840px;
   margin: 0 auto;
+  display: grid;
+  gap: clamp(12px, 2.8vw, 18px);
 }
 
-.legalPage h1 {
+.panel.legalPage {
+  padding: clamp(22px, 5vw, 40px);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.84), rgba(253, 248, 239, 0.98)),
+    var(--panel);
+}
+
+.legalPage > * {
   margin: 0;
 }
 
-.legalPage h2 {
-  margin: 28px 0 10px;
-  font-size: var(--font-subheading);
+.legalPage h1 {
+  font-size: clamp(29px, 7.6vw, 42px);
+  line-height: 1.2;
+  letter-spacing: -0.02em;
+  word-break: keep-all;
 }
 
-.legalPage p {
-  margin: 10px 0 0;
+.legalPage h2 {
+  margin-top: clamp(10px, 2.4vw, 18px);
+  padding-left: clamp(12px, 3vw, 16px);
+  border-left: 4px solid rgba(0, 69, 68, 0.22);
+  font-size: clamp(20px, 4.9vw, 28px);
+  line-height: 1.38;
+  letter-spacing: -0.01em;
+  word-break: keep-all;
+}
+
+.legalPage p,
+.legalPage li {
+  font-size: clamp(15px, 3.9vw, 17px);
+  line-height: 1.82;
+  color: rgba(26, 26, 26, 0.92);
+  word-break: keep-all;
+  overflow-wrap: anywhere;
 }
 
 .legalPage ul {
-  margin: 10px 0 0;
-  padding-left: 20px;
+  display: grid;
+  gap: clamp(10px, 2.8vw, 14px);
+  padding-left: clamp(18px, 4.8vw, 28px);
 }
 
-.legalPage li + li {
-  margin-top: 8px;
+.legalPage li {
+  padding-left: 0.24em;
+}
+
+.legalPage li::marker {
+  color: var(--main);
+  font-weight: 700;
 }
 
 .legalMeta {
-  margin-top: 10px;
   color: var(--muted);
+  font-size: clamp(13px, 3.1vw, 14px);
+  line-height: 1.65;
+  padding-bottom: clamp(12px, 2.6vw, 18px);
+  border-bottom: 1px solid rgba(0, 69, 68, 0.12);
+}
+
+.legalPage .eyebrow {
+  margin-bottom: 2px;
+}
+
+.legalPage strong {
+  overflow-wrap: anywhere;
 }
 
 .hero,
@@ -947,5 +990,23 @@ button:disabled {
 
   .adminOrdersGrid {
     grid-template-columns: 1fr;
+  }
+
+  .panel.legalPage {
+    padding: 20px 16px;
+    border-radius: 18px;
+  }
+
+  .legalPage {
+    gap: 12px;
+  }
+
+  .legalPage h2 {
+    padding-left: 12px;
+    border-left-width: 3px;
+  }
+
+  .legalPage ul {
+    padding-left: 20px;
   }
 }

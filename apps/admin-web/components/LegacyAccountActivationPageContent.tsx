@@ -9,6 +9,8 @@ type ActivationResponse = {
   ok?: boolean;
 };
 
+const PASSWORD_RULE_HINT = "8자 이상 200자 이하로 입력해 주세요.";
+
 export function SellerAccountRecoveryPageContent() {
   const [token, setToken] = useState("");
   const [loginId, setLoginId] = useState("");
@@ -152,9 +154,14 @@ export function SellerAccountRecoveryPageContent() {
               className="input"
               type="password"
               autoComplete="new-password"
+              minLength={8}
+              maxLength={200}
               value={newPassword}
               onChange={(event) => setNewPassword(event.target.value)}
             />
+            <p className="muted" style={{ margin: 0, fontSize: "0.9em" }}>
+              {PASSWORD_RULE_HINT}
+            </p>
           </div>
           <div className="field">
             <label htmlFor="admin-activation-password-confirm">새 비밀번호 확인</label>
@@ -163,6 +170,8 @@ export function SellerAccountRecoveryPageContent() {
               className="input"
               type="password"
               autoComplete="new-password"
+              minLength={8}
+              maxLength={200}
               value={newPasswordConfirm}
               onChange={(event) => setNewPasswordConfirm(event.target.value)}
             />
