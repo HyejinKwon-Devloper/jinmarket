@@ -38,6 +38,7 @@ export interface SessionUser {
   id: string;
   displayName: string;
   email: string | null;
+  profileImageUrl: string | null;
   sellerEmailVerifiedAt: string | null;
   threadsUsername: string | null;
   roles: string[];
@@ -75,6 +76,8 @@ export interface ProductCard {
   allowPriceOffer: boolean;
   purchaseType: PurchaseType;
   status: ProductStatus;
+  catalogGroupKey: string;
+  catalogGroupLabel: string;
   sellerDisplayName: string | null;
   primaryImageUrl: string | null;
   saleStartsAt: string;

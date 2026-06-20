@@ -1,108 +1,126 @@
-"use client";
+export const dynamic = "force-dynamic";
 
 import Link from "next/link";
-import { useEffect, useState } from "react";
-import type { ProductCard, SessionUser } from "@jinmarket/shared";
 
-import { ProductCardGrid } from "../../components/ProductCardGrid";
-import { fetchCurrentUser, requestJson } from "../../lib/api";
+import { SellerProductSections } from "../../components/SellerProductSections";
+import { Badge } from "../../components/ui/Badge";
+import { LinkButton } from "../../components/ui/Button";
+import { groupProductsByCatalogSection } from "../../lib/catalog";
+import { readCurrentUser, readProducts } from "../../lib/server-api";
 
-export default function FreeSharePage() {
-  const [user, setUser] = useState<SessionUser | null>(null);
-  const [items, setItems] = useState<ProductCard[]>([]);
-  const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    let cancelled = false;
-
-    async function load() {
-      try {
-        const [currentUser, productsResponse] = await Promise.all([
-          fetchCurrentUser(),
-          requestJson<{ items: ProductCard[] }>("/products")
-        ]);
-
-        if (!cancelled) {
-          setUser(currentUser);
-          setItems(productsResponse.items.filter((item) => item.isFreeShare));
-        }
-      } catch (loadError) {
-        if (!cancelled) {
-          setError(loadError instanceof Error ? loadError.message : "무료 나눔 상품을 불러오지 못했습니다.");
-        }
-      }
-    }
-
-    void load();
-
-    return () => {
-      cancelled = true;
-    };
-  }, []);
+export default async function FreeSharePage() {
+  const [currentUser, products] = await Promise.all([
+    readCurrentUser(),
+    readProducts(),
+  ]);
+  const items = products.filter((item) => item.isFreeShare);
+  const sections = groupProductsByCatalogSection(items);
+  const instantBuyCount = items.filter(
+    (item) => item.purchaseType === "INSTANT_BUY",
+  ).length;
+  const gameChanceCount = items.filter(
+    (item) => item.purchaseType === "GAME_CHANCE",
+  ).length;
+  const openCount = items.filter((item) => item.status === "OPEN").length;
 
   return (
-    <>
-      <section className="hero heroSplit">
-        <div>
-          <p className="eyebrow">Free Share Zone</p>
-          <h1>무료로 나눔받을 수 있는 상품만 따로 둘러보세요</h1>
-          <p className="muted heroBody">
-            무료 나눔 상품은 즉시 신청하거나 가위바위보 도전 방식으로 진행됩니다.
-            신청이 완료되면 판매자가 전달 방법을 직접 안내합니다.
-          </p>
-          <div className="actionRow" style={{ marginTop: 16 }}>
-            <Link className="ghostButton" href="/">
-              전체 상품으로 돌아가기
-            </Link>
-          </div>
-          {!user ? (
-            <div className="message">
-              로그인 전에는 목록만 확인할 수 있습니다. 무료 나눔을 신청하려면{" "}
-              <Link href="/login">로그인</Link>해 주세요.
+    <div className="space-y-4 sm:space-y-6 mx-3">
+      <section className="overflow-hidden rounded-[26px] border border-[var(--buyer-border)] bg-white shadow-[0_18px_42px_rgba(15,23,42,0.06)] sm:rounded-[32px] sm:shadow-[0_24px_60px_rgba(15,23,42,0.06)]">
+        <div className="grid gap-4 px-3.5 py-4 sm:px-7 sm:py-7 lg:grid-cols-[minmax(0,1.35fr)_minmax(300px,0.8fr)] lg:items-start">
+          <div className="space-y-3.5 sm:space-y-4">
+            <Badge variant="success">Free Share</Badge>
+            <div className="space-y-2">
+              <h1 className="max-w-[16ch] text-[22px] font-extrabold leading-[1.12] tracking-[-0.04em] text-[var(--buyer-dark)] sm:max-w-[14ch] sm:text-4xl sm:leading-none">
+                무료로 나눔받을 수 있는 상품만 따로 모아봤어요
+              </h1>
             </div>
-          ) : null}
-          {error ? <div className="message">{error}</div> : null}
-        </div>
 
-        <aside className="heroAside">
-          <div className="heroStatGrid">
-            <div className="heroStat">
-              <strong>{items.length}</strong>
-              <span>무료 나눔 상품</span>
+            <div className="flex flex-wrap gap-1.5 sm:gap-2">
+              <LinkButton href="/products" variant="outline">
+                전체 상품 보기
+              </LinkButton>
+              <LinkButton href="/events" variant="subtle">
+                이벤트 보기
+              </LinkButton>
             </div>
-            <div className="heroStat">
-              <strong>{items.filter((item) => item.purchaseType === "INSTANT_BUY").length}</strong>
-              <span>즉시 신청 가능</span>
-            </div>
-            <div className="heroStat">
-              <strong>{items.filter((item) => item.purchaseType === "GAME_CHANCE").length}</strong>
-              <span>가위바위보 도전</span>
-            </div>
-            <div className="heroStat">
-              <strong>{items.filter((item) => item.status === "OPEN").length}</strong>
-              <span>현재 신청 가능</span>
-            </div>
+
+            {!currentUser ? (
+              <div className="rounded-2xl border border-[var(--buyer-border)] bg-[var(--buyer-softest)] px-3 py-2.5 text-[12px] leading-5 text-[var(--buyer-dark)] sm:px-4 sm:py-3 sm:text-sm sm:leading-6">
+                로그인 없이도 목록은 볼 수 있지만, 무료 나눔 요청이나 구매
+                진행은 로그인 후에 가능합니다.{" "}
+                <Link
+                  className="font-semibold text-[var(--buyer-primary)] underline"
+                  href="/login"
+                >
+                  로그인
+                </Link>
+                후 계속해 주세요.
+              </div>
+            ) : null}
           </div>
-        </aside>
+
+          <aside className="grid gap-2 rounded-[22px] bg-[var(--buyer-softest)] p-3 sm:grid-cols-2 sm:gap-3 sm:rounded-[28px] sm:p-4 lg:grid-cols-1">
+            <div className="rounded-2xl bg-white p-3 shadow-sm sm:p-4">
+              <p className="text-xs font-semibold uppercase tracking-[0.16em] text-[var(--buyer-primary)]">
+                Free Share Inventory
+              </p>
+              <div className="mt-2.5 flex items-end justify-between gap-3">
+                <strong className="text-[22px] font-extrabold tracking-[-0.04em] text-[var(--buyer-dark)] sm:text-3xl">
+                  {items.length}
+                </strong>
+                <span className="text-[12px] text-[var(--buyer-muted)] sm:text-sm">
+                  무료 나눔 상품
+                </span>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-2 sm:col-span-2 sm:gap-3 lg:col-span-1">
+              <div className="rounded-2xl bg-white p-3 shadow-sm sm:p-4">
+                <strong className="text-[18px] font-extrabold tracking-[-0.04em] text-[var(--buyer-dark)] sm:text-2xl">
+                  {openCount}
+                </strong>
+                <p className="mt-1 text-[11px] text-[var(--buyer-muted)] sm:text-sm">
+                  현재 요청 가능
+                </p>
+              </div>
+              <div className="rounded-2xl bg-white p-3 shadow-sm sm:p-4">
+                <strong className="text-[16px] font-extrabold tracking-[-0.04em] text-[var(--buyer-dark)] sm:text-xl">
+                  {instantBuyCount}
+                </strong>
+                <p className="mt-1 text-[11px] text-[var(--buyer-muted)] sm:text-sm">
+                  즉시 요청형
+                </p>
+              </div>
+              <div className="rounded-2xl bg-white p-3 shadow-sm sm:p-4">
+                <strong className="text-[16px] font-extrabold tracking-[-0.04em] text-[var(--buyer-dark)] sm:text-xl">
+                  {gameChanceCount}
+                </strong>
+                <p className="mt-1 text-[11px] text-[var(--buyer-muted)] sm:text-sm">
+                  가위바위보형
+                </p>
+              </div>
+            </div>
+          </aside>
+        </div>
       </section>
 
-      <section>
-        <div className="sectionHeader">
-          <div>
-            <p className="eyebrow">Free Share</p>
-            <h2>무료 나눔 존</h2>
-          </div>
-          <div className="sectionMeta">
-            무료 나눔 상품만 모아 보여줍니다. 모바일에서는 2열, 큰 화면에서는 3열 카드로
-            빠르게 둘러볼 수 있습니다.
+      <section className="space-y-3">
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+          <div className="space-y-1">
+            <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[var(--buyer-primary)]">
+              Free Share Catalog
+            </p>
+            <h2 className="text-lg font-bold tracking-[-0.03em] text-[var(--buyer-ink)] sm:text-2xl">
+              판매자별 무료 나눔 모음
+            </h2>
           </div>
         </div>
 
-        <ProductCardGrid
-          items={items}
+        <SellerProductSections
           emptyMessage="지금은 등록된 무료 나눔 상품이 없습니다. 잠시 후 다시 확인해 주세요."
+          sections={sections}
         />
       </section>
-    </>
+    </div>
   );
 }

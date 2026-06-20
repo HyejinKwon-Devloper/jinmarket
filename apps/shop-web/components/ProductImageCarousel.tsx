@@ -1,7 +1,9 @@
-﻿"use client";
+"use client";
 
 import { useEffect, useState } from "react";
 import type { ProductImage } from "@jinmarket/shared";
+
+import { getProductDetailImageProps } from "../lib/image";
 
 type ProductImageCarouselProps = {
   title: string;
@@ -15,11 +17,11 @@ function getSlides(images: ProductImage[], fallbackUrl?: string | null) {
       ? images
       : [
           {
-            imageUrl: fallbackUrl ?? "https://placehold.co/800x800?text=No+Image",
+            imageUrl: fallbackUrl ?? null,
             providerPublicId: "fallback",
             sortOrder: 1,
-            isPrimary: true
-          }
+            isPrimary: true,
+          },
         ];
 
   const seenKeys = new Set<string>();
@@ -60,38 +62,68 @@ export function ProductImageCarousel({ title, images, fallbackUrl }: ProductImag
   }
 
   if (slides.length <= 1) {
-    const image = slides[0];
-    return <img className="heroImage" src={image.imageUrl} alt={title} />;
+    const image = getProductDetailImageProps(slides[0]?.imageUrl);
+
+    return (
+      <img
+        alt={title}
+        className="heroImage"
+        decoding="async"
+        fetchPriority="high"
+        height={1440}
+        loading="eager"
+        sizes={image.sizes}
+        src={image.src}
+        srcSet={image.srcSet}
+        width={1440}
+      />
+    );
   }
 
   return (
     <div className="carousel">
       <div className="carouselViewport">
         <div
+          aria-live="polite"
           className="carouselTrack"
           style={{ transform: `translateX(-${currentIndex * 100}%)` }}
-          aria-live="polite"
         >
-          {slides.map((image, index) => (
-            <div className="carouselSlide" key={`${image.providerPublicId}-${index}`}>
-              <img className="heroImage" src={image.imageUrl} alt={`${title} ${index + 1}`} />
-            </div>
-          ))}
+          {slides.map((image, index) => {
+            const slideImage = getProductDetailImageProps(image.imageUrl);
+            const isActive = index === currentIndex;
+
+            return (
+              <div className="carouselSlide" key={`${image.providerPublicId}-${index}`}>
+                <img
+                  alt={`${title} ${index + 1}`}
+                  className="heroImage"
+                  decoding="async"
+                  fetchPriority={isActive ? "high" : "auto"}
+                  height={1440}
+                  loading={isActive ? "eager" : "lazy"}
+                  sizes={slideImage.sizes}
+                  src={slideImage.src}
+                  srcSet={slideImage.srcSet}
+                  width={1440}
+                />
+              </div>
+            );
+          })}
         </div>
 
         <button
-          type="button"
-          className="carouselNav carouselNavPrev"
           aria-label="이전 이미지"
+          className="carouselNav carouselNavPrev"
           onClick={() => move(-1)}
+          type="button"
         >
           ‹
         </button>
         <button
-          type="button"
-          className="carouselNav carouselNavNext"
           aria-label="다음 이미지"
+          className="carouselNav carouselNavNext"
           onClick={() => move(1)}
+          type="button"
         >
           ›
         </button>

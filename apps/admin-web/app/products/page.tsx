@@ -2,7 +2,11 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import type { SellerAccessOverview, SellerProductRecord, SessionUser } from "@jinmarket/shared";
+import type {
+  SellerAccessOverview,
+  SellerProductRecord,
+  SessionUser,
+} from "@jinmarket/shared";
 
 import { ManagedSellerAccessStatusPanel } from "../../components/ManagedSellerAccessStatusPanel";
 import {
@@ -43,7 +47,9 @@ function exposureLabel(item: SellerProductRecord) {
 
   const now = Date.now();
   const saleStartsAt = new Date(item.saleStartsAt).getTime();
-  const saleEndsAt = item.saleEndsAt ? new Date(item.saleEndsAt).getTime() : null;
+  const saleEndsAt = item.saleEndsAt
+    ? new Date(item.saleEndsAt).getTime()
+    : null;
 
   if (saleStartsAt > now) {
     return "시작 대기";
@@ -75,7 +81,8 @@ function buyerLabel(item: SellerProductRecord) {
 export default function AdminProductsPage() {
   const [items, setItems] = useState<SellerProductRecord[]>([]);
   const [currentUser, setCurrentUser] = useState<SessionUser | null>(null);
-  const [sellerAccessOverview, setSellerAccessOverview] = useState<SellerAccessOverview | null>(null);
+  const [sellerAccessOverview, setSellerAccessOverview] =
+    useState<SellerAccessOverview | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [requestingApproval, setRequestingApproval] = useState(false);
 
@@ -85,7 +92,9 @@ export default function AdminProductsPage() {
     }
 
     async function loadProducts() {
-      const response = await requestJson<{ items: SellerProductRecord[] }>("/admin/products");
+      const response = await requestJson<{ items: SellerProductRecord[] }>(
+        "/admin/products",
+      );
       if (!isCancelled()) {
         setItems(response.items);
       }
@@ -112,7 +121,7 @@ export default function AdminProductsPage() {
         setSellerAccessOverview({
           canSell: true,
           isAdmin: user.roles.includes("ADMIN"),
-          latestRequest: null
+          latestRequest: null,
         });
         setMessage(null);
       }
@@ -142,7 +151,7 @@ export default function AdminProductsPage() {
         setMessage(
           error instanceof Error
             ? error.message
-            : "상품 목록을 불러오지 못했습니다."
+            : "상품 목록을 불러오지 못했습니다.",
         );
       }
     });
@@ -152,7 +161,7 @@ export default function AdminProductsPage() {
         setMessage(
           error instanceof Error
             ? error.message
-            : "상품 목록을 불러오지 못했습니다."
+            : "상품 목록을 불러오지 못했습니다.",
         );
       });
     }
@@ -173,10 +182,13 @@ export default function AdminProductsPage() {
     };
   }, [load]);
 
-  const canManageProducts = hasSellerAccess(currentUser) || sellerAccessOverview?.canSell;
+  const canManageProducts =
+    hasSellerAccess(currentUser) || sellerAccessOverview?.canSell;
 
   const openCount = useMemo(
-    () => items.filter((item) => item.status === "OPEN" && item.isSaleActive).length,
+    () =>
+      items.filter((item) => item.status === "OPEN" && item.isSaleActive)
+        .length,
     [items],
   );
   const freeShareCount = useMemo(
@@ -189,10 +201,6 @@ export default function AdminProductsPage() {
       <section className="hero">
         <p className="eyebrow">Products</p>
         <h1>등록한 상품을 빠르게 훑고 바로 관리하세요</h1>
-        <p className="muted" style={{ marginTop: 12 }}>
-          작은 썸네일과 핵심 정보 중심의 목록형 화면으로 여러 상품을 한 번에
-          확인할 수 있습니다.
-        </p>
         <div className="actionRow" style={{ marginTop: 16 }}>
           {canManageProducts ? (
             <Link className="primaryButton" href="/products/new">
@@ -237,11 +245,15 @@ export default function AdminProductsPage() {
               setSellerAccessOverview((previous) => ({
                 canSell: false,
                 isAdmin: previous?.isAdmin ?? false,
-                latestRequest: response.item
+                latestRequest: response.item,
               }));
               setMessage(response.message);
             } catch (error) {
-              setMessage(error instanceof Error ? error.message : "판매자 승인 신청에 실패했습니다.");
+              setMessage(
+                error instanceof Error
+                  ? error.message
+                  : "판매자 승인 신청에 실패했습니다.",
+              );
             } finally {
               setRequestingApproval(false);
             }
@@ -262,7 +274,9 @@ export default function AdminProductsPage() {
         </div>
 
         {!canManageProducts ? (
-          <p className="muted">판매자 승인이 완료되면 이곳에서 등록한 상품을 관리할 수 있습니다.</p>
+          <p className="muted">
+            판매자 승인이 완료되면 이곳에서 등록한 상품을 관리할 수 있습니다.
+          </p>
         ) : items.length === 0 ? (
           <p className="muted">
             아직 등록한 상품이 없습니다. 첫 상품부터 바로 등록해보세요.

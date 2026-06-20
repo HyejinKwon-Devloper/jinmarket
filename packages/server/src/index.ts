@@ -30,6 +30,7 @@ import {
   sellerApprovalAuthCookieName,
   setSessionCookie,
   setSellerApprovalAuthCookie,
+  updateProfileImage,
   verifyBuyerAccountActivation,
   verifyBuyerEmailVerification,
   verifyLegacyAccountActivation,
@@ -62,6 +63,7 @@ import {
   listSellerOrders,
   listSellerProducts,
   signCloudinaryUpload,
+  signProfileImageUpload,
   updateSellerProduct
 } from "./services/product-service.js";
 import { playGamePurchase, purchaseInstantProduct } from "./services/purchase-service.js";
@@ -71,6 +73,7 @@ import {
   getSellerAccessOverview,
   listPendingSellerAccessRequests
 } from "./services/seller-access-service.js";
+import { runWithDbContext } from "@jinmarket/db";
 
 type AuthedRequest = Request & {
   sessionUser?: Awaited<ReturnType<typeof getSessionUser>>;
@@ -115,6 +118,10 @@ const sellerEmailRequestSchema = z.object({
 
 const sellerEmailVerifySchema = z.object({
   code: z.string().trim().regex(/^\d{6}$/)
+});
+
+const profileImageUpdateSchema = z.object({
+  profileImageUrl: z.string().trim().url().max(2048).nullable()
 });
 
 const buyerAccountActivationSchema = z.object({
@@ -168,6 +175,16 @@ async function attachSessionUser(request: AuthedRequest, _response: Response, ne
   } catch (error) {
     next(error);
   }
+}
+
+function attachDbContext(request: AuthedRequest, _response: Response, next: NextFunction) {
+  runWithDbContext(
+    {
+      userId: request.sessionUser?.id ?? null,
+      roles: request.sessionUser?.roles ?? []
+    },
+    () => next()
+  );
 }
 
 function requireAuth(request: AuthedRequest) {
@@ -337,6 +354,7 @@ export function createApp() {
   app.use(cookieParser());
   app.use(express.json({ limit: "2mb" }));
   app.use(attachSessionUser);
+  app.use(attachDbContext);
 
   app.get("/health", (_request, response) => {
     response.json({ ok: true });
@@ -568,6 +586,27 @@ export function createApp() {
     "/me",
     asyncHandler(async (request, response) => {
       response.json({ user: request.sessionUser ?? null });
+    })
+  );
+
+  app.post(
+    "/me/profile-image/sign",
+    asyncHandler(async (request, response) => {
+      const user = requireAuth(request);
+      response.json(signProfileImageUpload(user));
+    })
+  );
+
+  app.patch(
+    "/me/profile-image",
+    asyncHandler(async (request, response) => {
+      const user = requireAuth(request);
+      const { profileImageUrl } = profileImageUpdateSchema.parse(request.body);
+      const updatedUser = await updateProfileImage(user.id, profileImageUrl);
+      response.json({
+        user: updatedUser,
+        message: "프로필 사진이 저장되었습니다."
+      });
     })
   );
 

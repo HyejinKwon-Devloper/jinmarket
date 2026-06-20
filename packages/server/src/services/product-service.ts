@@ -1,7 +1,7 @@
 ﻿import { v2 as cloudinary } from "cloudinary";
 import { z } from "zod";
 
-import { query, withTransaction, type DbClient } from "../../../db/src/index.js";
+import { query, withTransaction, type DbClient } from "@jinmarket/db";
 import { MAX_PRODUCT_IMAGES } from "../../../shared/src/index.js";
 import type {
   CreateProductInput,
@@ -145,6 +145,8 @@ type OrderRow = {
 };
 
 function mapProductCard(row: ProductCardRow): ProductCard {
+  const isAnonymousGroup = row.is_anonymous;
+
   return {
     id: row.id,
     title: row.title,
@@ -155,6 +157,8 @@ function mapProductCard(row: ProductCardRow): ProductCard {
     allowPriceOffer: row.allow_price_offer,
     purchaseType: row.purchase_type,
     status: row.status,
+    catalogGroupKey: isAnonymousGroup ? "anonymous" : `seller:${row.seller_id}`,
+    catalogGroupLabel: isAnonymousGroup ? "익명 셀렉션" : (row.seller_display_name ?? "판매자 셀렉션"),
     sellerDisplayName: row.seller_display_name,
     primaryImageUrl: row.primary_image_url,
     saleStartsAt: row.sale_started_at.toISOString(),
@@ -388,6 +392,36 @@ function getCloudinaryProductFolder(identity: { userId: string; threadsUsername?
   const folderOwner = sanitizeCloudinaryPathSegment(identity.threadsUsername || identity.userId);
 
   return `${baseFolder || "jinmarket"}/products/${folderOwner}`;
+}
+
+function getCloudinaryProfileFolder(identity: { userId: string; threadsUsername?: string | null }) {
+  const trimmed = env.CLOUDINARY_UPLOAD_FOLDER.replace(/\/+$/, "");
+  const baseFolder = trimmed.endsWith("/products")
+    ? trimmed.slice(0, Math.max(0, trimmed.length - "/products".length))
+    : trimmed;
+  const folderOwner = sanitizeCloudinaryPathSegment(identity.threadsUsername || identity.userId);
+
+  return `${baseFolder || "jinmarket"}/profiles/${folderOwner}`;
+}
+
+function signCloudinaryFolderUpload(folder: string): UploadSignatureResponse {
+  if (!env.CLOUDINARY_CLOUD_NAME || !env.CLOUDINARY_API_KEY || !env.CLOUDINARY_API_SECRET) {
+    throw new AppError("Cloudinary 환경 변수가 아직 설정되지 않았습니다.", 500);
+  }
+
+  const timestamp = Math.floor(Date.now() / 1000);
+  const signature = cloudinary.utils.api_sign_request(
+    { folder, timestamp },
+    env.CLOUDINARY_API_SECRET
+  );
+
+  return {
+    cloudName: env.CLOUDINARY_CLOUD_NAME,
+    apiKey: env.CLOUDINARY_API_KEY,
+    folder,
+    timestamp,
+    signature
+  };
 }
 
 function assertValidProductImages(images: ProductImage[]) {
@@ -1292,26 +1326,19 @@ export async function listMyOrders(userId: string) {
 }
 
 export function signCloudinaryUpload(user: SessionUser): UploadSignatureResponse {
-  if (!env.CLOUDINARY_CLOUD_NAME || !env.CLOUDINARY_API_KEY || !env.CLOUDINARY_API_SECRET) {
-    throw new AppError("Cloudinary ?섍꼍 蹂?섍? ?꾩쭅 ?ㅼ젙?섏? ?딆븯?듬땲??", 500);
-  }
-
-  const timestamp = Math.floor(Date.now() / 1000);
   const folder = getCloudinaryProductFolder({
     userId: user.id,
     threadsUsername: user.threadsUsername
   });
-  const signature = cloudinary.utils.api_sign_request(
-    { folder, timestamp },
-    env.CLOUDINARY_API_SECRET
-  );
+  return signCloudinaryFolderUpload(folder);
+}
 
-  return {
-    cloudName: env.CLOUDINARY_CLOUD_NAME,
-    apiKey: env.CLOUDINARY_API_KEY,
-    folder,
-    timestamp,
-    signature
-  };
+export function signProfileImageUpload(user: SessionUser): UploadSignatureResponse {
+  const folder = getCloudinaryProfileFolder({
+    userId: user.id,
+    threadsUsername: user.threadsUsername
+  });
+
+  return signCloudinaryFolderUpload(folder);
 }
 

@@ -1,19 +1,54 @@
 import { config } from "dotenv";
+import { existsSync, readFileSync } from "node:fs";
+import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { z } from "zod";
 
 if (!process.env.VERCEL) {
+  function findWorkspaceRoot(startDir: string) {
+    let currentDir = startDir;
+
+    while (true) {
+      const packageJsonPath = join(currentDir, "package.json");
+
+      if (existsSync(packageJsonPath)) {
+        try {
+          const packageJson = JSON.parse(readFileSync(packageJsonPath, "utf8")) as {
+            workspaces?: unknown;
+          };
+
+          if (packageJson.workspaces) {
+            return currentDir;
+          }
+        } catch {
+          // Ignore malformed package.json while walking upward.
+        }
+      }
+
+      const parentDir = dirname(currentDir);
+
+      if (parentDir === currentDir) {
+        return null;
+      }
+
+      currentDir = parentDir;
+    }
+  }
+
   const nodeEnv = process.env.NODE_ENV?.trim() || "development";
+  const moduleDir = dirname(fileURLToPath(import.meta.url));
+  const workspaceRoot =
+    findWorkspaceRoot(process.cwd()) ?? findWorkspaceRoot(moduleDir) ?? process.cwd();
   const envFiles = [
-    `../../../.env.${nodeEnv}.local`,
-    "../../../.env.local",
-    `../../../.env.${nodeEnv}`,
-    "../../../.env"
+    `.env.${nodeEnv}.local`,
+    ".env.local",
+    `.env.${nodeEnv}`,
+    ".env"
   ];
 
   for (const envFile of envFiles) {
     config({
-      path: fileURLToPath(new URL(envFile, import.meta.url))
+      path: join(workspaceRoot, envFile)
     });
   }
 }

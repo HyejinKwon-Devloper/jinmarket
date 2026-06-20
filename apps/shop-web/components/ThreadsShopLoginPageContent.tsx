@@ -42,7 +42,9 @@ export function ShopLoginPageContent() {
     }
 
     const params = new URLSearchParams(window.location.search);
-    setTargetUrl(resolveSafeReturnTo(params.get("return_to"), "/", window.location.origin));
+    setTargetUrl(
+      resolveSafeReturnTo(params.get("return_to"), "/", window.location.origin),
+    );
     setLoginMessage(params.get("error"));
   }, []);
 
@@ -70,7 +72,9 @@ export function ShopLoginPageContent() {
       setLoginMessage(response.message);
       redirectToTarget();
     } catch (error) {
-      setLoginMessage(error instanceof Error ? error.message : "로그인에 실패했습니다.");
+      setLoginMessage(
+        error instanceof Error ? error.message : "로그인에 실패했습니다.",
+      );
     } finally {
       setLoginSubmitting(false);
     }
@@ -103,7 +107,9 @@ export function ShopLoginPageContent() {
       setSignupMessage(response.message);
       redirectToTarget();
     } catch (error) {
-      setSignupMessage(error instanceof Error ? error.message : "회원가입에 실패했습니다.");
+      setSignupMessage(
+        error instanceof Error ? error.message : "회원가입에 실패했습니다.",
+      );
     } finally {
       setSignupSubmitting(false);
     }
@@ -119,18 +125,25 @@ export function ShopLoginPageContent() {
     try {
       setResetSubmitting(true);
       setResetMessage(null);
-      const response = await requestJson<AuthResponse>("/auth/password/reset/request-code", {
-        method: "POST",
-        body: JSON.stringify({
-          loginId: resetLoginId,
-          email: resetEmail,
-          portal: "SHOP",
-        }),
-      });
+      const response = await requestJson<AuthResponse>(
+        "/auth/password/reset/request-code",
+        {
+          method: "POST",
+          body: JSON.stringify({
+            loginId: resetLoginId,
+            email: resetEmail,
+            portal: "SHOP",
+          }),
+        },
+      );
       setResetRequested(true);
       setResetMessage(response.message);
     } catch (error) {
-      setResetMessage(error instanceof Error ? error.message : "비밀번호 재설정 요청에 실패했습니다.");
+      setResetMessage(
+        error instanceof Error
+          ? error.message
+          : "비밀번호 재설정 요청에 실패했습니다.",
+      );
     } finally {
       setResetSubmitting(false);
     }
@@ -151,20 +164,27 @@ export function ShopLoginPageContent() {
     try {
       setResetSubmitting(true);
       setResetMessage(null);
-      const response = await requestJson<AuthResponse>("/auth/password/reset/verify", {
-        method: "POST",
-        body: JSON.stringify({
-          loginId: resetLoginId,
-          email: resetEmail,
-          code: resetCode,
-          newPassword: resetNewPassword,
-          portal: "SHOP",
-        }),
-      });
+      const response = await requestJson<AuthResponse>(
+        "/auth/password/reset/verify",
+        {
+          method: "POST",
+          body: JSON.stringify({
+            loginId: resetLoginId,
+            email: resetEmail,
+            code: resetCode,
+            newPassword: resetNewPassword,
+            portal: "SHOP",
+          }),
+        },
+      );
       setResetMessage(response.message);
       redirectToTarget();
     } catch (error) {
-      setResetMessage(error instanceof Error ? error.message : "비밀번호 재설정에 실패했습니다.");
+      setResetMessage(
+        error instanceof Error
+          ? error.message
+          : "비밀번호 재설정에 실패했습니다.",
+      );
     } finally {
       setResetSubmitting(false);
     }
@@ -175,10 +195,14 @@ export function ShopLoginPageContent() {
       <p className="eyebrow">Buyer Login</p>
       <h1>구매자 사이트에 로그인해 주세요</h1>
       <p className="muted">
-        일반 구매자 계정으로 로그인할 수 있습니다. 구매와 무료 나눔 신청은 로그인 후 이용할 수 있습니다.
+        일반 구매자 계정으로 로그인할 수 있습니다. 구매와 무료 나눔 신청은
+        로그인 후 이용할 수 있습니다.
       </p>
 
-      <form onSubmit={handleLoginSubmit} style={{ marginTop: 20, display: "grid", gap: 12 }}>
+      <form
+        onSubmit={handleLoginSubmit}
+        style={{ marginTop: 20, display: "grid", gap: 12 }}
+      >
         <div className="field">
           <label htmlFor="shop-login-id">아이디</label>
           <input
@@ -203,7 +227,11 @@ export function ShopLoginPageContent() {
           />
         </div>
         <div className="actionRow">
-          <button className="primaryButton" type="submit" disabled={loginSubmitting}>
+          <button
+            className="primaryButton"
+            type="submit"
+            disabled={loginSubmitting}
+          >
             {loginSubmitting ? "로그인 중..." : "로그인"}
           </button>
         </div>
@@ -212,16 +240,22 @@ export function ShopLoginPageContent() {
 
       <div
         aria-hidden="true"
-        style={{ height: 1, background: "rgba(15, 23, 42, 0.12)", margin: "24px 0" }}
+        style={{
+          height: 1,
+          background: "rgba(15, 23, 42, 0.12)",
+          margin: "24px 0",
+        }}
       />
 
       <form onSubmit={handleRequestReset} style={{ display: "grid", gap: 12 }}>
         <div>
           <p className="eyebrow">Buyer Reset</p>
-          <h2 style={{ margin: "6px 0 0", fontSize: "1.15rem" }}>비밀번호 재설정</h2>
+          <h2 style={{ margin: "6px 0 0", fontSize: "1.15rem" }}>
+            비밀번호 재설정
+          </h2>
           <p className="muted" style={{ marginTop: 8 }}>
-            기존 구매자 계정인데 비밀번호가 아직 없다면, 아래에서 인증번호를 받아 초기 비밀번호를 설정할 수
-            있습니다.
+            기존 구매자 계정인데 비밀번호가 아직 없다면, 아래에서 인증번호를
+            받아 초기 비밀번호를 설정할 수 있습니다.
           </p>
         </div>
         <div className="field">
@@ -248,14 +282,23 @@ export function ShopLoginPageContent() {
           />
         </div>
         <div className="actionRow">
-          <button className="secondaryButton" type="submit" disabled={resetSubmitting}>
-            {resetSubmitting ? "전송 중..." : resetRequested ? "인증번호 다시 보내기" : "인증번호 보내기"}
+          <button
+            className="secondaryButton"
+            type="submit"
+            disabled={resetSubmitting}
+          >
+            {resetSubmitting
+              ? "전송 중..."
+              : resetRequested
+                ? "인증번호 다시 보내기"
+                : "인증번호 보내기"}
           </button>
         </div>
         <div className="panel" style={{ marginTop: 4 }}>
           <p className="muted" style={{ margin: 0 }}>
-            예전에 만든 계정이라 이메일이 아직 없거나 비밀번호를 새로 잡아야 한다면, 아래 기존 계정 활성화
-            페이지에서 이메일 등록과 비밀번호 설정을 먼저 진행해 주세요.
+            예전에 만든 계정이라 이메일이 아직 없거나 비밀번호를 새로 잡아야
+            한다면, 아래 기존 계정 활성화 페이지에서 이메일 등록과 비밀번호
+            설정을 먼저 진행해 주세요.
           </p>
           <div className="actionRow" style={{ marginTop: 12 }}>
             <Link className="ghostButton" href="/activate-account">
@@ -266,7 +309,10 @@ export function ShopLoginPageContent() {
       </form>
 
       {resetRequested ? (
-        <form onSubmit={handleVerifyReset} style={{ marginTop: 16, display: "grid", gap: 12 }}>
+        <form
+          onSubmit={handleVerifyReset}
+          style={{ marginTop: 16, display: "grid", gap: 12 }}
+        >
           <div className="field">
             <label htmlFor="shop-reset-code">인증번호</label>
             <input
@@ -296,7 +342,9 @@ export function ShopLoginPageContent() {
             </p>
           </div>
           <div className="field">
-            <label htmlFor="shop-reset-password-confirm">새 비밀번호 확인</label>
+            <label htmlFor="shop-reset-password-confirm">
+              새 비밀번호 확인
+            </label>
             <input
               id="shop-reset-password-confirm"
               className="input"
@@ -305,34 +353,50 @@ export function ShopLoginPageContent() {
               minLength={8}
               maxLength={200}
               value={resetNewPasswordConfirm}
-              onChange={(event) => setResetNewPasswordConfirm(event.target.value)}
+              onChange={(event) =>
+                setResetNewPasswordConfirm(event.target.value)
+              }
             />
           </div>
           <div className="actionRow">
-            <button className="primaryButton" type="submit" disabled={resetSubmitting}>
+            <button
+              className="primaryButton"
+              type="submit"
+              disabled={resetSubmitting}
+            >
               {resetSubmitting ? "설정 중..." : "비밀번호 설정 완료"}
             </button>
           </div>
         </form>
       ) : null}
 
-      {resetMessage ? <div className="message" style={{ marginTop: 16 }}>{resetMessage}</div> : null}
+      {resetMessage ? (
+        <div className="message" style={{ marginTop: 16 }}>
+          {resetMessage}
+        </div>
+      ) : null}
 
       <div
         aria-hidden="true"
-        style={{ height: 1, background: "rgba(15, 23, 42, 0.12)", margin: "24px 0" }}
+        style={{
+          height: 1,
+          background: "rgba(15, 23, 42, 0.12)",
+          margin: "24px 0",
+        }}
       />
 
       <form onSubmit={handleSignupSubmit} style={{ display: "grid", gap: 12 }}>
         <div>
           <p className="eyebrow">Sign Up</p>
-          <h2 style={{ margin: "6px 0 0", fontSize: "1.15rem" }}>바로 가입하기</h2>
+          <h2 style={{ margin: "6px 0 0", fontSize: "1.15rem" }}>
+            바로 가입하기
+          </h2>
           <p className="muted" style={{ marginTop: 8 }}>
             구매자 사이트는 이메일을 함께 등록하고 바로 가입할 수 있습니다.
           </p>
         </div>
         <div className="field">
-          <label htmlFor="shop-signup-name">이름</label>
+          <label htmlFor="shop-signup-name">스레드 이름</label>
           <input
             id="shop-signup-name"
             className="input"
@@ -395,13 +459,21 @@ export function ShopLoginPageContent() {
           />
         </div>
         <div className="actionRow">
-          <button className="secondaryButton" type="submit" disabled={signupSubmitting}>
+          <button
+            className="secondaryButton"
+            type="submit"
+            disabled={signupSubmitting}
+          >
             {signupSubmitting ? "가입 처리 중..." : "회원가입"}
           </button>
         </div>
       </form>
 
-      {signupMessage ? <div className="message" style={{ marginTop: 16 }}>{signupMessage}</div> : null}
+      {signupMessage ? (
+        <div className="message" style={{ marginTop: 16 }}>
+          {signupMessage}
+        </div>
+      ) : null}
     </section>
   );
 }

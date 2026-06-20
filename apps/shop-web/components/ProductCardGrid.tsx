@@ -16,7 +16,7 @@ function sellerLabel(item: ProductCard) {
 
 export function ProductCardGrid({
   items,
-  emptyMessage
+  emptyMessage,
 }: {
   items: ProductCard[];
   emptyMessage: string;
@@ -50,12 +50,20 @@ export function ProductCardGrid({
             />
             <div className="cardBody">
               <div className="badgeRow">
-                <span className={`badge ${item.status === "OPEN" ? "success" : ""}`}>
+                <span
+                  className={`badge ${item.status === "OPEN" ? "success" : ""}`}
+                >
                   {statusLabel(item.status)}
                 </span>
-                <span className="badge">{purchaseTypeLabel(item.purchaseType)}</span>
-                {item.isFreeShare ? <span className="badge">무료 나눔</span> : null}
-                {item.allowPriceOffer ? <span className="badge">가격 제안 가능</span> : null}
+                <span className="badge">
+                  {purchaseTypeLabel(item.purchaseType)}
+                </span>
+                {item.isFreeShare ? (
+                  <span className="badge">무료 나눔</span>
+                ) : null}
+                {item.allowPriceOffer ? (
+                  <span className="badge">가격 제안 가능</span>
+                ) : null}
               </div>
 
               <div className="cardSummary">

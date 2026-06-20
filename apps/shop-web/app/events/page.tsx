@@ -1,13 +1,11 @@
-"use client";
+export const dynamic = "force-dynamic";
 
 import Link from "next/link";
-import { useEffect, useState } from "react";
-import type { EventCard, SessionUser } from "@jinmarket/shared";
 
 import { EventCardGrid } from "../../components/EventCardGrid";
-import { fetchCurrentUser, requestJson } from "../../lib/api";
+import { readCurrentUser, readEvents } from "../../lib/server-api";
 
-function eventStateLabel(item: EventCard) {
+function eventStateLabel(item: Awaited<ReturnType<typeof readEvents>>[number]) {
   const now = Date.now();
   const startsAt = new Date(item.startsAt).getTime();
   const endsAt = new Date(item.endsAt).getTime();
@@ -23,43 +21,11 @@ function eventStateLabel(item: EventCard) {
   return "진행중";
 }
 
-export default function EventZonePage() {
-  const [user, setUser] = useState<SessionUser | null>(null);
-  const [items, setItems] = useState<EventCard[]>([]);
-  const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    let cancelled = false;
-
-    async function load() {
-      try {
-        const [currentUser, eventsResponse] = await Promise.all([
-          fetchCurrentUser(),
-          requestJson<{ items: EventCard[] }>("/events"),
-        ]);
-
-        if (!cancelled) {
-          setUser(currentUser);
-          setItems(eventsResponse.items);
-        }
-      } catch (loadError) {
-        if (!cancelled) {
-          setError(
-            loadError instanceof Error
-              ? loadError.message
-              : "이벤트를 불러오지 못했습니다.",
-          );
-        }
-      }
-    }
-
-    void load();
-
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-
+export default async function EventZonePage() {
+  const [currentUser, items] = await Promise.all([
+    readCurrentUser(),
+    readEvents(),
+  ]);
   const activeCount = items.filter(
     (item) => eventStateLabel(item) === "진행중",
   ).length;
@@ -68,57 +34,65 @@ export default function EventZonePage() {
   ).length;
 
   return (
-    <>
-      <section className="hero heroBanner heroSplit">
-        <div>
-          <p className="eyebrow">Event Zone</p>
-          <h1 className="heroLead">
-            지금 진행 중인 이벤트를 둘러보고, 응모 가능한 이벤트에 바로
-            참여해 보세요.
-          </h1>
-          <p className="muted heroBody">
-            판매자가 등록한 이벤트는 대표 사진 카드로 먼저 보여주고, 상세
-            보기에서는 4장 이미지 캐러셀과 응모 버튼을 함께 제공해요.
-          </p>
-          <div className="actionRow" style={{ marginTop: 16 }}>
-            <Link className="ghostButton" href="/">
-              상품 목록으로 돌아가기
-            </Link>
+    <div className="space-y-4 sm:space-y-6 mx-3">
+      <section className="overflow-hidden rounded-[26px] border border-[var(--buyer-border)] bg-white shadow-[0_18px_42px_rgba(15,23,42,0.06)] sm:rounded-[32px] sm:shadow-[0_24px_60px_rgba(15,23,42,0.06)]">
+        <div className="grid gap-4 px-3.5 py-4 sm:px-7 sm:py-7 lg:grid-cols-[minmax(0,1.4fr)_minmax(320px,0.8fr)] lg:items-start">
+          <div className="space-y-3.5 sm:space-y-5">
+            <p className="eyebrow">Event Zone</p>
+            <h1 className="text-[22px] font-extrabold leading-[1.12] tracking-[-0.04em] text-[var(--buyer-dark)] sm:max-w-[13ch] sm:text-4xl sm:leading-none">
+              지금 진행 중인 이벤트를 둘러보고,
+              <br /> 바로 참여해보세요.
+            </h1>
           </div>
-          {!user ? (
-            <div className="message">
-              로그인 전에도 이벤트 목록은 볼 수 있어요. 응모 가능한 이벤트에
-              참여하려면 <Link href="/login">로그인</Link>해 주세요.
-            </div>
-          ) : null}
-          {error ? <div className="message">{error}</div> : null}
-        </div>
 
-        <aside className="heroAside">
-          <div className="heroStatGrid">
-            <div className="heroStat">
-              <strong>{items.length}</strong>
-              <span>노출중 이벤트</span>
+          <aside className="grid gap-2 rounded-[22px] bg-[var(--buyer-softest)] p-3 sm:grid-cols-2 sm:gap-3 sm:rounded-[28px] sm:p-4 lg:grid-cols-1">
+            <div className="rounded-2xl bg-white p-3 shadow-sm sm:p-4">
+              <p className="text-xs font-semibold uppercase tracking-[0.16em] text-[var(--buyer-primary)]">
+                Free Share Inventory
+              </p>
+              <div className="mt-2.5 flex items-end justify-between gap-3">
+                <strong className="text-[22px] font-extrabold tracking-[-0.04em] text-[var(--buyer-dark)] sm:text-3xl">
+                  {items.length}
+                </strong>
+                <span className="text-[12px] text-[var(--buyer-muted)] sm:text-sm">
+                  노출중인 이벤트
+                </span>
+              </div>
             </div>
-            <div className="heroStat">
-              <strong>{activeCount}</strong>
-              <span>현재 진행중</span>
+
+            <div className="grid grid-cols-2 gap-2 sm:col-span-2 sm:gap-3 lg:col-span-1">
+              <div className="rounded-2xl bg-white p-3 shadow-sm sm:p-4">
+                <strong className="text-[18px] font-extrabold tracking-[-0.04em] text-[var(--buyer-dark)] sm:text-2xl">
+                  {activeCount}
+                </strong>
+                <p className="mt-1 text-[11px] text-[var(--buyer-muted)] sm:text-sm">
+                  현재 진행중
+                </p>
+              </div>
+              <div className="rounded-2xl bg-white p-3 shadow-sm sm:p-4">
+                <strong className="text-[18px] font-extrabold tracking-[-0.04em] text-[var(--buyer-dark)] sm:text-2xl">
+                  {shopEntryCount}
+                </strong>
+                <p className="mt-1 text-[11px] text-[var(--buyer-muted)] sm:text-sm">
+                  응모 가능 이벤트
+                </p>
+              </div>
             </div>
-            <div className="heroStat">
-              <strong>{shopEntryCount}</strong>
-              <span>응모 가능 이벤트</span>
+            <div className="rounded-2xl bg-white p-3 shadow-sm sm:p-4">
+              <div className="mt-2.5 flex items-end justify-between gap-3">
+                <strong className="text-[22px] font-extrabold tracking-[-0.04em] text-[var(--buyer-dark)] sm:text-3xl">
+                  {items.reduce((count, item) => count + item.entryCount, 0)}
+                </strong>
+                <span className="text-[12px] text-[var(--buyer-muted)] sm:text-sm">
+                  전체 응모 수
+                </span>
+              </div>
             </div>
-            <div className="heroStat">
-              <strong>
-                {items.reduce((count, item) => count + item.entryCount, 0)}
-              </strong>
-              <span>전체 응모 수</span>
-            </div>
-          </div>
-        </aside>
+          </aside>
+        </div>
       </section>
 
-      <section>
+      <section className="space-y-3">
         <div className="sectionHeader">
           <div>
             <p className="eyebrow">Live Events</p>
@@ -131,10 +105,10 @@ export default function EventZonePage() {
         </div>
 
         <EventCardGrid
-          items={items}
           emptyMessage="현재 노출 중인 이벤트가 없어요. 잠시 후 다시 확인해 주세요."
+          items={items}
         />
       </section>
-    </>
+    </div>
   );
 }

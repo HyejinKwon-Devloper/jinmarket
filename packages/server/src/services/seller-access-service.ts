@@ -1,4 +1,4 @@
-import { query, withTransaction } from "../../../db/src/index.js";
+import { query, withTransaction } from "@jinmarket/db";
 import type {
   SellerAccessOverview,
   SellerAccessRequestRecord,

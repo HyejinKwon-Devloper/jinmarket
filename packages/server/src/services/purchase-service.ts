@@ -1,4 +1,4 @@
-import { withTransaction } from "../../../db/src/index.js";
+import { withTransaction } from "@jinmarket/db";
 import type {
   GameAttemptRecord,
   GamePlayResult,

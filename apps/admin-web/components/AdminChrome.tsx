@@ -2,10 +2,29 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import type { SessionUser } from "@jinmarket/shared";
 
-import { fetchCurrentUser, isApprovalAdmin, requestJson } from "../lib/api";
+import {
+  fetchCurrentUser,
+  hasSellerAccess,
+  isApprovalAdmin,
+  requestJson,
+} from "../lib/api";
+import { PwaInstallPrompt } from "./PwaInstallPrompt";
+import {
+  ArrowRightIcon,
+  ChevronRightIcon,
+  CloseIcon,
+  MenuIcon,
+} from "./ui/Icons";
+
+type NavigationItem = {
+  href: string;
+  label: string;
+  description: string;
+  adminOnly?: boolean;
+};
 
 const defaultShopAppUrl =
   process.env.NODE_ENV === "production"
@@ -13,11 +32,116 @@ const defaultShopAppUrl =
     : "https://jinmarket.test:3000";
 const shopAppUrl = process.env.NEXT_PUBLIC_SHOP_APP_URL ?? defaultShopAppUrl;
 
+const navigationItems: NavigationItem[] = [
+  {
+    href: "/products",
+    label: "상품 관리",
+    description: "등록된 상품 목록과 상세 상태를 관리합니다.",
+  },
+  {
+    href: "/products/new",
+    label: "새 상품 등록",
+    description: "판매할 굿즈를 빠르게 등록합니다.",
+  },
+  {
+    href: "/events",
+    label: "이벤트 관리",
+    description: "이벤트 목록과 응모 현황을 확인합니다.",
+  },
+  {
+    href: "/events/new",
+    label: "새 이벤트 등록",
+    description: "응모 이벤트를 새로 생성합니다.",
+  },
+  {
+    href: "/orders",
+    label: "주문 관리",
+    description: "구매 완료 주문과 연락 상태를 확인합니다.",
+  },
+  {
+    href: "/random-game",
+    label: "추첨 게임",
+    description: "가위바위보 및 추첨형 흐름을 실행합니다.",
+  },
+  {
+    href: "/seller-approval",
+    label: "판매자 승인",
+    description: "판매 권한 요청을 검토합니다.",
+    adminOnly: true,
+  },
+];
+
+const legalItems = [
+  { href: "/privacy", label: "개인정보 처리방침" },
+  { href: "/terms", label: "이용약관" },
+  { href: "/data-deletion", label: "데이터 삭제 안내" },
+] as const;
+
+function resolveCurrentItem(pathname: string) {
+  const sortedItems = [...navigationItems].sort(
+    (left, right) => right.href.length - left.href.length,
+  );
+
+  return (
+    sortedItems.find((item) => {
+      if (pathname === item.href) {
+        return true;
+      }
+
+      if (item.href === "/random-game") {
+        return pathname.startsWith("/random-game");
+      }
+
+      return pathname.startsWith(`${item.href}/`);
+    }) ?? null
+  );
+}
+
+function getUserInitial(user: SessionUser | null) {
+  const label =
+    user?.displayName?.trim() ||
+    user?.threadsUsername?.trim() ||
+    user?.email?.trim() ||
+    "Admin";
+
+  return label.slice(0, 1).toUpperCase();
+}
+
+function getUserStatus(user: SessionUser | null) {
+  if (!user) {
+    return "로그인이 필요합니다.";
+  }
+
+  if (isApprovalAdmin(user)) {
+    return "관리자 권한 활성화";
+  }
+
+  if (hasSellerAccess(user)) {
+    return "판매자 권한 활성화";
+  }
+
+  if (user.sellerEmailVerifiedAt) {
+    return "판매 승인 대기 중";
+  }
+
+  return "이메일 인증 필요";
+}
+
 export function AdminChrome({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<SessionUser | null>(null);
   const [navOpen, setNavOpen] = useState(false);
   const pathname = usePathname();
-  const isImmersiveRoute = pathname === "/random-game" || pathname.startsWith("/random-game/");
+  const isImmersiveRoute =
+    pathname === "/random-game" || pathname.startsWith("/random-game/");
+  const currentItem = resolveCurrentItem(pathname);
+
+  const visibleNavigationItems = useMemo(
+    () =>
+      navigationItems.filter(
+        (item) => !item.adminOnly || isApprovalAdmin(user),
+      ),
+    [user],
+  );
 
   useEffect(() => {
     void fetchCurrentUser()
@@ -26,18 +150,55 @@ export function AdminChrome({ children }: { children: React.ReactNode }) {
   }, []);
 
   useEffect(() => {
-    if (!user || user.sellerEmailVerifiedAt || pathname === "/login" || typeof window === "undefined") {
+    if (
+      !user ||
+      user.sellerEmailVerifiedAt ||
+      pathname === "/login" ||
+      typeof window === "undefined"
+    ) {
       return;
     }
 
     const loginUrl = new URL("/login", window.location.origin);
-    loginUrl.searchParams.set("return_to", `${window.location.pathname}${window.location.search}`);
+    loginUrl.searchParams.set(
+      "return_to",
+      `${window.location.pathname}${window.location.search}`,
+    );
     loginUrl.searchParams.set("verify_required", "1");
     window.location.replace(loginUrl.toString());
   }, [pathname, user]);
 
-  function closeNav() {
+  useEffect(() => {
     setNavOpen(false);
+  }, [pathname]);
+
+  useEffect(() => {
+    if (!navOpen || typeof window === "undefined") {
+      return;
+    }
+
+    const previousOverflow = document.body.style.overflow;
+
+    function handleKeyDown(event: KeyboardEvent) {
+      if (event.key === "Escape") {
+        setNavOpen(false);
+      }
+    }
+
+    document.body.style.overflow = "hidden";
+    window.addEventListener("keydown", handleKeyDown);
+
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      window.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [navOpen]);
+
+  async function handleLogout() {
+    await requestJson("/auth/logout", { method: "POST" });
+    setUser(null);
+    setNavOpen(false);
+    window.location.href = "/login";
   }
 
   if (isImmersiveRoute) {
@@ -46,80 +207,195 @@ export function AdminChrome({ children }: { children: React.ReactNode }) {
 
   return (
     <div className="shell">
-      <header className="topbar">
-        <div className="topbarHeaderRow">
-          <div>
-            <p className="eyebrow">Jinmarket Admin</p>
-            <Link href="/products" className="brand" onClick={closeNav}>
-              출품자 상품과 판매 현황을 한눈에 관리
-            </Link>
+      <header className="adminHeader safe-area-top safe-area-inline">
+        <div className="adminHeaderSurface">
+          <div className="adminHeaderRow">
+            <div className="adminBrandLockup">
+              <p className="eyebrow">Jinmarket Admin</p>
+              <Link href="/products" className="brand">
+                소중한 컬렉션을 <br />
+                좋은분에게 보낼 수 있도록 <br /> 이곳에서 관리해보세요
+              </Link>
+              <br />
+            </div>
+            <div className="adminHeaderActions">
+              <button
+                type="button"
+                className="adminMenuButton"
+                aria-label="메뉴 열기"
+                aria-expanded={navOpen}
+                aria-controls="admin-navigation-drawer"
+                onClick={() => setNavOpen(true)}
+              >
+                <MenuIcon className="h-5 w-5" />
+                <span className="sr-only">메뉴 열기</span>
+              </button>
+            </div>
           </div>
-
-          <button
-            type="button"
-            className="navToggle"
-            aria-expanded={navOpen}
-            aria-controls="admin-lnb"
-            onClick={() => setNavOpen((prev) => !prev)}
-          >
-            {navOpen ? "메뉴 닫기" : "메뉴 열기"}
-          </button>
         </div>
-
-        <nav id="admin-lnb" className={`nav ${navOpen ? "open" : ""}`}>
-          <Link href="/events" onClick={closeNav}>
-            이벤트 목록
-          </Link>
-          <Link href="/events/new" onClick={closeNav}>
-            이벤트 등록
-          </Link>
-          <Link href="/products" onClick={closeNav}>
-            상품 목록
-          </Link>
-          <Link href="/products/new" onClick={closeNav}>
-            상품 등록
-          </Link>
-          <Link href="/orders" onClick={closeNav}>
-            주문 관리
-          </Link>
-          <Link href="/random-game" onClick={closeNav}>
-            랜덤 게임
-          </Link>
-          {isApprovalAdmin(user) ? (
-            <Link href="/seller-approval" onClick={closeNav}>
-              판매자 승인
-            </Link>
-          ) : null}
-          <a href={shopAppUrl} target="_blank" rel="noreferrer" onClick={closeNav}>
-            구매자 사이트
-          </a>
-          {user ? (
-            <button
-              className="ghostButton"
-              onClick={async () => {
-                await requestJson("/auth/logout", { method: "POST" });
-                setUser(null);
-                closeNav();
-                window.location.href = "/login";
-              }}
-            >
-              로그아웃
-            </button>
-          ) : (
-            <Link href="/login" onClick={closeNav}>
-              로그인
-            </Link>
-          )}
-        </nav>
       </header>
-      <main className="main">{children}</main>
+
+      <div
+        aria-hidden={!navOpen}
+        className={`adminDrawerShell ${navOpen ? "open" : ""}`}
+      >
+        <button
+          aria-label="메뉴 닫기"
+          className="adminDrawerBackdrop"
+          tabIndex={navOpen ? 0 : -1}
+          type="button"
+          onClick={() => setNavOpen(false)}
+        />
+
+        <aside
+          aria-labelledby="admin-navigation-title"
+          aria-modal="true"
+          className="adminDrawer safe-area-top safe-area-bottom safe-area-inline"
+          id="admin-navigation-drawer"
+          role="dialog"
+        >
+          <div className="adminDrawerPanel">
+            <div className="adminDrawerHeader">
+              <div className="adminProfileCard">
+                <span aria-hidden="true" className="adminAvatar">
+                  {user?.profileImageUrl ? (
+                    <img
+                      alt=""
+                      className="adminAvatarImage"
+                      src={user.profileImageUrl}
+                    />
+                  ) : (
+                    getUserInitial(user)
+                  )}
+                </span>
+                <div className="adminProfileMeta">
+                  <p className="eyebrow" id="admin-navigation-title">
+                    Admin Menu
+                  </p>
+                  <strong className="adminProfileName">
+                    {user?.displayName ?? "관리자 계정"}
+                  </strong>
+                  <p className="adminProfileSubline">
+                    {user?.email ??
+                      "로그인하면 관리자 메뉴가 더 정확하게 보입니다."}
+                  </p>
+                  <p className="adminProfileStatus">{getUserStatus(user)}</p>
+                </div>
+              </div>
+
+              <button
+                aria-label="메뉴 닫기"
+                className="adminCloseButton"
+                type="button"
+                onClick={() => setNavOpen(false)}
+              >
+                <CloseIcon className="h-5 w-5" />
+                <span className="sr-only">메뉴 닫기</span>
+              </button>
+            </div>
+
+            <div className="adminDrawerCurrentCard">
+              <p className="eyebrow">현재 메뉴</p>
+              <strong>{currentItem?.label ?? "관리자 홈"}</strong>
+              <p>
+                {currentItem?.description ??
+                  "상품, 이벤트, 주문, 승인까지 하나의 디자인 시스템으로 관리합니다."}
+              </p>
+            </div>
+
+            <hr className="adminDrawerDivider" />
+
+            <nav aria-label="관리자 주요 메뉴" className="adminDrawerNav">
+              <ul className="adminMenuList">
+                {visibleNavigationItems.map((item) => {
+                  const isActive = currentItem?.href === item.href;
+
+                  return (
+                    <li key={item.href}>
+                      <Link
+                        aria-current={isActive ? "page" : undefined}
+                        className={`adminNavItem ${isActive ? "active" : ""}`}
+                        href={item.href}
+                      >
+                        <span className="adminNavItemText">
+                          <span className="adminNavItemLabel">
+                            {item.label}
+                          </span>
+                          <span className="adminNavItemDescription">
+                            {item.description}
+                          </span>
+                        </span>
+                        <span aria-hidden="true" className="adminNavItemBadge">
+                          {isActive ? (
+                            <ChevronRightIcon className="h-4 w-4" />
+                          ) : (
+                            <ArrowRightIcon className="h-4 w-4" />
+                          )}
+                        </span>
+                      </Link>
+                    </li>
+                  );
+                })}
+              </ul>
+            </nav>
+
+            <div className="adminDrawerFooter">
+              <div className="adminDrawerLegal">
+                {legalItems.map((item) => (
+                  <Link key={item.href} href={item.href}>
+                    {item.label}
+                  </Link>
+                ))}
+              </div>
+
+              <div className="adminDrawerActions">
+                <PwaInstallPrompt />
+                <a
+                  className="ghostButton"
+                  href={shopAppUrl}
+                  rel="noreferrer"
+                  target="_blank"
+                >
+                  구매자 사이트 보기
+                </a>
+                {user ? (
+                  <button
+                    className="primaryButton"
+                    type="button"
+                    onClick={() => {
+                      void handleLogout();
+                    }}
+                  >
+                    로그아웃
+                  </button>
+                ) : (
+                  <Link className="primaryButton" href="/login">
+                    로그인
+                  </Link>
+                )}
+              </div>
+            </div>
+          </div>
+        </aside>
+      </div>
+
+      <main className="main safe-area-inline">{children}</main>
+
       <footer className="siteFooter">
-        <div className="siteFooterInner">
+        <div className="siteFooterInner safe-area-inline safe-area-bottom">
           <p className="siteFooterCopy">Jinmarket Seller 정책 안내</p>
           <div className="siteFooterLinks">
             <Link href="/privacy">개인정보처리방침</Link>
             <Link href="/terms">이용약관</Link>
             <Link href="/data-deletion">데이터 삭제 안내</Link>
+            <span className="eyebrow" style={{ margin: 0 }}>
+              홈 화면에 추가 가능
+            </span>
+            {legalItems.map((item) => (
+              <Link key={item.href} href={item.href}>
+                {item.label}
+              </Link>
+            ))}
           </div>
         </div>
       </footer>

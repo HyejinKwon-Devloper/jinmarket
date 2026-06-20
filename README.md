@@ -69,11 +69,12 @@ npm run dev --workspace @jinmarket/admin-web
 
 1. 로컬 개발은 [`.env.development.example`](C:/coding/jinmarket/.env.development.example), 배포 환경은 [`.env.example`](C:/coding/jinmarket/.env.example)를 기준으로 값을 채웁니다.
 2. Supabase SQL Editor에서 [schema.sql](C:/coding/jinmarket/db/schema.sql)을 실행합니다.
-3. 기존 스키마를 이미 올렸다면 [20260328_add_price_offers.sql](C:/coding/jinmarket/db/migrations/20260328_add_price_offers.sql)도 추가 적용합니다.
+3. 기존 스키마를 이미 올렸다면 [db/migrations](C:/coding/jinmarket/db/migrations) 아래 마이그레이션도 순서대로 적용합니다.
 4. Cloudinary와 이메일 인증 메일 발송용 SMTP 값을 `.env`에 넣습니다.
 5. 판매자 승인 화면을 사용할 관리자 계정의 로그인 아이디를 `SELLER_APPROVAL_ADMIN_LOGIN_ID`에, 2차 확인용 비밀번호를 `SELLER_APPROVAL_ADMIN_PASSWORD`에 설정합니다.
-6. 프런트 앱은 `NEXT_PUBLIC_API_BASE_URL`을 기준으로 API에 직접 연결합니다.
-7. Next의 `/api` 프록시 라우트를 계속 사용할 경우에는 `API_PROXY_TARGET`도 같은 API 주소로 맞춥니다.
+6. 앱 런타임용 DB 계정은 `postgres` 대신 `api_app`처럼 `RLS`를 우회하지 않는 전용 role을 사용합니다.
+7. 프런트 앱은 `NEXT_PUBLIC_API_BASE_URL`을 기준으로 API에 직접 연결합니다.
+8. Next의 `/api` 프록시 라우트를 계속 사용할 경우에는 `API_PROXY_TARGET`도 같은 API 주소로 맞춥니다.
 
 환경별 권장 값:
 
@@ -83,6 +84,7 @@ npm run dev --workspace @jinmarket/admin-web
   - `NEXT_PUBLIC_SHOP_APP_URL=https://jinmarket.test:3000`
   - `NEXT_PUBLIC_ADMIN_APP_URL=https://jinmarket.test:3001`
   - `SELLER_APPROVAL_ADMIN_LOGIN_ID=admin`
+  - `DATABASE_URL=postgresql://api_app:password@db.example.supabase.co:5432/postgres?sslmode=require`
   - `SMTP_HOST=smtp.example.com`
   - `SMTP_PORT=587`
   - `SMTP_FROM_EMAIL=no-reply@example.com`
@@ -92,6 +94,7 @@ npm run dev --workspace @jinmarket/admin-web
   - `NEXT_PUBLIC_SHOP_APP_URL=https://web.jinmarket.shop`
   - `NEXT_PUBLIC_ADMIN_APP_URL=https://management.jinmarket.shop`
   - `SELLER_APPROVAL_ADMIN_LOGIN_ID=admin`
+  - `DATABASE_URL=postgresql://api_app:password@db.example.supabase.co:5432/postgres?sslmode=require`
   - `SMTP_HOST=smtp.example.com`
   - `SMTP_PORT=587`
   - `SMTP_FROM_EMAIL=no-reply@example.com`

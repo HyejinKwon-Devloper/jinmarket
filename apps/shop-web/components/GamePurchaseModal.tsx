@@ -9,6 +9,8 @@ import {
   type GamePurchaseProgress
 } from "@jinmarket/shared";
 
+import { CloseIcon } from "./ui/Icons";
+
 const choiceOrder: GameChoice[] = ["SCISSORS", "ROCK", "PAPER"];
 
 const choiceMeta: Record<GameChoice, { label: string; image: string; caption: string }> = {
@@ -221,7 +223,8 @@ export function GamePurchaseModal({
             disabled={phase === "loading"}
             aria-label="가위바위보 팝업 닫기"
           >
-            x
+            <CloseIcon className="h-[18px] w-[18px]" />
+            <span className="sr-only">닫기</span>
           </button>
         </div>
 

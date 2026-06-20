@@ -1,7 +1,7 @@
-"use client";
-
 import Link from "next/link";
 import type { EventCard } from "@jinmarket/shared";
+
+import { getEventCardImageProps } from "../lib/image";
 
 function eventStateLabel(item: EventCard) {
   const now = Date.now();
@@ -40,44 +40,53 @@ export function EventCardGrid({
 
   return (
     <div className="cardGrid">
-      {items.map((item) => (
-        <article className="card" key={item.id}>
-          <img
-            className="cardImage"
-            src={item.primaryImageUrl ?? "https://placehold.co/600x600?text=Event"}
-            alt={item.title}
-          />
-          <div className="cardBody">
-            <div className="badgeRow">
-              <span className="badge success">{eventStateLabel(item)}</span>
-              <span className="badge">
-                {registrationModeLabel(item.registrationMode)}
-              </span>
-            </div>
+      {items.map((item, index) => {
+        const image = getEventCardImageProps(item.primaryImageUrl);
 
-            <div className="cardSummary">
-              <h2 className="cardTitle">{item.title}</h2>
-              <p className="cardSellerLabel">진행자 {item.sellerDisplayName}</p>
-            </div>
+        return (
+          <article className="card" key={item.id}>
+            <img
+              alt={item.title}
+              className="cardImage"
+              decoding="async"
+              fetchPriority={index < 2 ? "high" : "auto"}
+              height={720}
+              loading={index < 4 ? "eager" : "lazy"}
+              sizes={image.sizes}
+              src={image.src}
+              srcSet={image.srcSet}
+              width={720}
+            />
+            <div className="cardBody">
+              <div className="badgeRow">
+                <span className="badge success">{eventStateLabel(item)}</span>
+                <span className="badge">
+                  {registrationModeLabel(item.registrationMode)}
+                </span>
+              </div>
 
-            <div className="cardMeta">
-              <p className="muted">
-                응모 {item.entryCount.toLocaleString("ko-KR")}명
-              </p>
-              <p className="muted">
-                {new Date(item.startsAt).toLocaleDateString("ko-KR")} ~{" "}
-                {new Date(item.endsAt).toLocaleDateString("ko-KR")}
-              </p>
-            </div>
+              <div className="cardSummary">
+                <h2 className="cardTitle">{item.title}</h2>
+                <p className="cardSellerLabel">진행자 {item.sellerDisplayName}</p>
+              </div>
 
-            <div className="cardFooter">
-              <Link className="primaryButton" href={`/events/${item.id}`}>
-                상세 보기
-              </Link>
+              <div className="cardMeta">
+                <p className="muted">응모 {item.entryCount.toLocaleString("ko-KR")}명</p>
+                <p className="muted">
+                  {new Date(item.startsAt).toLocaleDateString("ko-KR")} ~{" "}
+                  {new Date(item.endsAt).toLocaleDateString("ko-KR")}
+                </p>
+              </div>
+
+              <div className="cardFooter">
+                <Link className="primaryButton" href={`/events/${item.id}`}>
+                  상세 보기
+                </Link>
+              </div>
             </div>
-          </div>
-        </article>
-      ))}
+          </article>
+        );
+      })}
     </div>
   );
 }

@@ -1,6 +1,5 @@
 const cloudinaryHostSuffix = "res.cloudinary.com";
 const cloudinaryUploadMarker = "/image/upload/";
-const defaultProductCardImage = "https://placehold.co/720x720?text=No+Image";
 
 type CloudinaryImageProps = {
   sizes?: string;
@@ -66,29 +65,105 @@ function buildCloudinaryImageUrl(imageUrl: string, options: CloudinaryTransformO
   }
 }
 
-export function getProductCardImageProps(imageUrl?: string | null): CloudinaryImageProps {
+function buildPlaceholderDataUrl(label: string) {
+  const svg = `
+    <svg xmlns="http://www.w3.org/2000/svg" width="720" height="720" viewBox="0 0 720 720" fill="none">
+      <rect width="720" height="720" rx="48" fill="#EAF4FA" />
+      <rect x="180" y="180" width="360" height="360" rx="36" fill="#DCECF7" />
+      <path d="M270 450L345 360L405 420L450 375L540 510H180L270 450Z" fill="#5FA8D3" opacity="0.55" />
+      <circle cx="300" cy="285" r="30" fill="#1F4E79" opacity="0.28" />
+      <text x="360" y="580" text-anchor="middle" fill="#16324F" font-size="38" font-family="Pretendard, Arial, sans-serif" font-weight="700">
+        ${label}
+      </text>
+    </svg>
+  `.trim();
+
+  return `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(svg)}`;
+}
+
+const defaultProductCardImage = buildPlaceholderDataUrl("No Image");
+const defaultEventCardImage = buildPlaceholderDataUrl("Event");
+
+function buildResponsiveImageProps({
+  imageUrl,
+  fallbackSrc,
+  responsiveWidths,
+  sizes,
+  transform,
+}: {
+  imageUrl?: string | null;
+  fallbackSrc: string;
+  responsiveWidths: number[];
+  sizes: string;
+  transform: Omit<CloudinaryTransformOptions, "width" | "height"> & {
+    crop: string;
+    gravity?: string;
+    height?: number;
+  };
+}): CloudinaryImageProps {
   if (!imageUrl) {
     return {
-      src: defaultProductCardImage
+      sizes,
+      src: fallbackSrc,
     };
   }
 
-  const responsiveWidths = [360, 720];
   const variants = responsiveWidths.map((width) => ({
     url: buildCloudinaryImageUrl(imageUrl, {
-      crop: "fill",
-      format: "auto",
-      gravity: "auto",
-      height: width,
-      quality: "auto",
-      width
+      ...transform,
+      width,
+      height: transform.height ?? width,
     }),
-    width
+    width,
   }));
 
   return {
-    sizes: "(min-width: 1100px) 360px, (min-width: 700px) 50vw, 50vw",
+    sizes,
     src: variants[variants.length - 1].url,
-    srcSet: variants.map((variant) => `${variant.url} ${variant.width}w`).join(", ")
+    srcSet: variants.map((variant) => `${variant.url} ${variant.width}w`).join(", "),
   };
+}
+
+export function getProductCardImageProps(imageUrl?: string | null): CloudinaryImageProps {
+  return buildResponsiveImageProps({
+    imageUrl,
+    fallbackSrc: defaultProductCardImage,
+    responsiveWidths: [240, 360, 720],
+    sizes: "(min-width: 1100px) 360px, (min-width: 640px) 33vw, 50vw",
+    transform: {
+      crop: "fill",
+      format: "auto",
+      gravity: "auto",
+      quality: "auto",
+    },
+  });
+}
+
+export function getEventCardImageProps(imageUrl?: string | null): CloudinaryImageProps {
+  return buildResponsiveImageProps({
+    imageUrl,
+    fallbackSrc: defaultEventCardImage,
+    responsiveWidths: [360, 720],
+    sizes: "(min-width: 1100px) 360px, (min-width: 700px) 50vw, 50vw",
+    transform: {
+      crop: "fill",
+      format: "auto",
+      gravity: "auto",
+      quality: "auto",
+    },
+  });
+}
+
+export function getProductDetailImageProps(imageUrl?: string | null): CloudinaryImageProps {
+  return buildResponsiveImageProps({
+    imageUrl,
+    fallbackSrc: defaultProductCardImage,
+    responsiveWidths: [720, 1080, 1440],
+    sizes: "(min-width: 960px) 55vw, 100vw",
+    transform: {
+      crop: "limit",
+      format: "auto",
+      quality: "auto",
+    },
+  });
 }

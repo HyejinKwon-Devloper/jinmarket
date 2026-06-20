@@ -2,7 +2,7 @@ import type { Response } from "express";
 import { createHash, randomInt, timingSafeEqual } from "node:crypto";
 import { z } from "zod";
 
-import { query, withTransaction, type DbClient } from "../../../db/src/index.js";
+import { query, withTransaction, type DbClient } from "@jinmarket/db";
 import type { SessionUser } from "../../../shared/src/index.js";
 
 import { AppError, isPgUniqueError } from "../errors.js";
@@ -28,6 +28,7 @@ type SessionUserRow = {
   id: string;
   display_name: string;
   email: string | null;
+  profile_image_url: string | null;
   seller_email_verified_at: Date | null;
   login_id: string | null;
   roles: string[] | string | null;
@@ -125,6 +126,7 @@ function mapSessionUser(row: SessionUserRow): SessionUser {
     id: row.id,
     displayName: row.display_name,
     email: row.email,
+    profileImageUrl: row.profile_image_url,
     sellerEmailVerifiedAt: row.seller_email_verified_at ? row.seller_email_verified_at.toISOString() : null,
     threadsUsername: row.login_id,
     roles: normalizeRoleList(row.roles)
@@ -156,6 +158,40 @@ function normalizeDisplayName(rawDisplayName: string) {
 
 function normalizeEmail(rawEmail: string) {
   return emailSchema.parse(rawEmail).toLowerCase();
+}
+
+function normalizeProfileImageUrl(rawProfileImageUrl: string | null) {
+  if (rawProfileImageUrl === null) {
+    return null;
+  }
+
+  const normalized = rawProfileImageUrl.trim();
+
+  if (!normalized) {
+    return null;
+  }
+
+  let parsed: URL;
+
+  try {
+    parsed = new URL(normalized);
+  } catch {
+    throw new AppError("프로필 사진 주소가 올바르지 않습니다.", 400, "INVALID_PROFILE_IMAGE_URL");
+  }
+
+  const isCloudinaryHost =
+    parsed.hostname === "res.cloudinary.com" ||
+    parsed.hostname.endsWith(".res.cloudinary.com");
+
+  if (parsed.protocol !== "https:" || !isCloudinaryHost) {
+    throw new AppError(
+      "프로필 사진은 등록된 Cloudinary 이미지여야 합니다.",
+      400,
+      "INVALID_PROFILE_IMAGE_URL"
+    );
+  }
+
+  return parsed.toString();
 }
 
 function normalizeVerificationCode(rawCode: string) {
@@ -239,6 +275,7 @@ async function getUserBySessionHash(sessionHash: string) {
         u.id,
         u.display_name,
         u.email,
+        u.profile_image_url,
         u.seller_email_verified_at,
         ${accountLoginIdSql("session_user")} AS login_id,
         ARRAY_REMOVE(ARRAY_AGG(DISTINCT ur.role::text), NULL) AS roles
@@ -264,6 +301,7 @@ async function loadSessionUserById(client: DbClient, userId: string) {
         u.id,
         u.display_name,
         u.email,
+        u.profile_image_url,
         u.seller_email_verified_at,
         ${accountLoginIdSql("account")} AS login_id,
         ARRAY_REMOVE(ARRAY_AGG(DISTINCT ur.role::text), NULL) AS roles
@@ -1454,6 +1492,29 @@ export async function getSessionUser(sessionToken?: string) {
   }
 
   return getUserBySessionHash(hashSessionToken(sessionToken));
+}
+
+export async function updateProfileImage(userId: string, rawProfileImageUrl: string | null) {
+  const profileImageUrl = normalizeProfileImageUrl(rawProfileImageUrl);
+
+  return withTransaction(async (client) => {
+    const result = await client.query<{ id: string }>(
+      `
+        UPDATE users
+        SET profile_image_url = $2,
+            updated_at = NOW()
+        WHERE id = $1
+        RETURNING id
+      `,
+      [userId, profileImageUrl]
+    );
+
+    if (!result.rows[0]) {
+      throw new AppError("사용자 정보를 찾을 수 없습니다.", 404);
+    }
+
+    return loadSessionUserById(client, userId);
+  });
 }
 
 export function setSessionCookie(response: Response, sessionToken: string, expiresAt: Date) {

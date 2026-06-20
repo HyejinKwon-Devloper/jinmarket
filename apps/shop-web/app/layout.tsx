@@ -9,29 +9,48 @@ const shopAppUrl =
 
 export const metadata: Metadata = {
   metadataBase: new URL(shopAppUrl),
-  title: "진마켓 구매 사이트",
-  description: "가위바위보와 즉시 구매를 지원하는 진마켓 구매자용 웹앱",
+  applicationName: "JINMARKET",
+  manifest: "/manifest.webmanifest",
+  title: "JINMARKET 구매자 사이트",
+  description: "굿즈 거래를 더 빠르게 둘러볼 수 있는 JINMARKET 구매자 웹앱입니다.",
+  appleWebApp: {
+    capable: true,
+    statusBarStyle: "default",
+    title: "JINMARKET",
+  },
+  formatDetection: {
+    telephone: false,
+  },
+  icons: {
+    icon: [
+      { url: "/icon-192.png", sizes: "192x192", type: "image/png" },
+      { url: "/icon-512.png", sizes: "512x512", type: "image/png" },
+    ],
+    apple: [{ url: "/apple-touch-icon.png", sizes: "180x180", type: "image/png" }],
+    shortcut: ["/icon-192.png"],
+  },
   openGraph: {
     type: "website",
     url: shopAppUrl,
-    title: "진마켓 구매 사이트",
-    description: "가위바위보와 즉시 구매를 지원하는 진마켓 구매자용 웹앱",
-    siteName: "진마켓",
+    title: "JINMARKET 구매자 사이트",
+    description: "굿즈 거래를 더 빠르게 둘러볼 수 있는 JINMARKET 구매자 웹앱입니다.",
+    siteName: "JINMARKET",
     images: [
       {
         url: "/header.png",
-        alt: "진마켓 대표 이미지",
+        alt: "JINMARKET 대표 이미지",
       },
     ],
   },
   twitter: {
     card: "summary_large_image",
-    title: "진마켓 구매 사이트",
-    description: "가위바위보와 즉시 구매를 지원하는 진마켓 구매자용 웹앱",
+    title: "JINMARKET 구매자 사이트",
+    description: "굿즈 거래를 더 빠르게 둘러볼 수 있는 JINMARKET 구매자 웹앱입니다.",
     images: ["/header.png"],
   },
   other: {
     "facebook-domain-verification": "ffk2jbyjn6phl8vetpkp87bjuf7q4o",
+    "mobile-web-app-capable": "yes",
   },
 };
 
@@ -39,6 +58,8 @@ export const viewport: Viewport = {
   width: "device-width",
   initialScale: 1,
   viewportFit: "cover",
+  themeColor: "#1f4e79",
+  colorScheme: "light",
 };
 
 export default function RootLayout({
