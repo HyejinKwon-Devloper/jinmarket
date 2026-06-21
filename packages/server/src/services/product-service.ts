@@ -14,7 +14,7 @@ import type {
   SessionUser,
   SellerProductRecord,
   UpdateProductInput,
-  UploadSignatureResponse
+  UploadSignatureResponse,
 } from "../../../shared/src/index.js";
 
 import { AppError, isPgUniqueError } from "../errors.js";
@@ -22,11 +22,12 @@ import { env } from "../env.js";
 import { summarizeGamePurchaseSeries } from "../utils/rps.js";
 
 import { accountIdentityJoins, accountLoginIdSql } from "./account-sql.js";
+import { sendPushNotificationToUser } from "./push-service.js";
 
 cloudinary.config({
   cloud_name: env.CLOUDINARY_CLOUD_NAME,
   api_key: env.CLOUDINARY_API_KEY,
-  api_secret: env.CLOUDINARY_API_SECRET
+  api_secret: env.CLOUDINARY_API_SECRET,
 });
 
 const productImageSchema = z.object({
@@ -36,10 +37,13 @@ const productImageSchema = z.object({
   height: z.number().int().positive().nullable().optional(),
   bytes: z.number().int().positive().nullable().optional(),
   sortOrder: z.number().int().min(1),
-  isPrimary: z.boolean()
+  isPrimary: z.boolean(),
 });
 
-const productImagesSchema = z.array(productImageSchema).min(1).max(MAX_PRODUCT_IMAGES);
+const productImagesSchema = z
+  .array(productImageSchema)
+  .min(1)
+  .max(MAX_PRODUCT_IMAGES);
 const isoDateTimeSchema = z.string().datetime({ offset: true });
 
 const createProductSchema = z.object({
@@ -52,7 +56,7 @@ const createProductSchema = z.object({
   purchaseType: z.enum(["INSTANT_BUY", "GAME_CHANCE"]),
   saleStartsAt: isoDateTimeSchema.optional(),
   saleEndsAt: isoDateTimeSchema.nullable().optional(),
-  images: productImagesSchema
+  images: productImagesSchema,
 });
 
 const updateProductSchema = z.object({
@@ -66,12 +70,12 @@ const updateProductSchema = z.object({
   status: z.enum(["DRAFT", "OPEN", "SOLD_OUT", "CANCELLED"]).optional(),
   saleStartsAt: isoDateTimeSchema.optional(),
   saleEndsAt: isoDateTimeSchema.nullable().optional(),
-  images: productImagesSchema.optional()
+  images: productImagesSchema.optional(),
 });
 
 const createPriceOfferSchema = z.object({
   offeredPriceKrw: z.number().int().positive(),
-  note: z.string().trim().max(1000).optional()
+  note: z.string().trim().max(1000).optional(),
 });
 
 type ProductCardRow = {
@@ -140,7 +144,12 @@ type OrderRow = {
   buyer_display_name: string;
   buyer_threads_username: string | null;
   source: "INSTANT_BUY" | "GAME_CHANCE_WIN" | "PRICE_OFFER_ACCEPTED";
-  status: "PENDING_CONTACT" | "CONTACTED" | "TRANSFER_PENDING" | "COMPLETED" | "CANCELLED";
+  status:
+    | "PENDING_CONTACT"
+    | "CONTACTED"
+    | "TRANSFER_PENDING"
+    | "COMPLETED"
+    | "CANCELLED";
   ordered_at: Date;
 };
 
@@ -158,13 +167,15 @@ function mapProductCard(row: ProductCardRow): ProductCard {
     purchaseType: row.purchase_type,
     status: row.status,
     catalogGroupKey: isAnonymousGroup ? "anonymous" : `seller:${row.seller_id}`,
-    catalogGroupLabel: isAnonymousGroup ? "익명 셀렉션" : (row.seller_display_name ?? "판매자 셀렉션"),
+    catalogGroupLabel: isAnonymousGroup
+      ? "익명 셀렉션"
+      : (row.seller_display_name ?? "판매자 셀렉션"),
     sellerDisplayName: row.seller_display_name,
     primaryImageUrl: row.primary_image_url,
     saleStartsAt: row.sale_started_at.toISOString(),
     saleEndsAt: row.sale_ends_at ? row.sale_ends_at.toISOString() : null,
     isSaleActive: row.sale_active,
-    createdAt: row.created_at.toISOString()
+    createdAt: row.created_at.toISOString(),
   };
 }
 
@@ -177,7 +188,7 @@ function mapProductImage(row: ProductImageRow): ProductImage {
     height: row.height,
     bytes: row.bytes,
     sortOrder: row.sort_order,
-    isPrimary: row.is_primary
+    isPrimary: row.is_primary,
   };
 }
 
@@ -194,7 +205,7 @@ function mapOrder(row: OrderRow) {
     buyerThreadsUsername: row.buyer_threads_username,
     source: row.source,
     status: row.status,
-    orderedAt: row.ordered_at.toISOString()
+    orderedAt: row.ordered_at.toISOString(),
   };
 }
 
@@ -207,7 +218,7 @@ function mapAttempt(row: GameAttemptRow) {
     playerChoice: row.player_choice,
     systemChoice: row.system_choice,
     result: row.result,
-    playedAt: row.played_at.toISOString()
+    playedAt: row.played_at.toISOString(),
   };
 }
 
@@ -220,7 +231,7 @@ function mapPriceOffer(row: PriceOfferRow): PriceOfferRecord {
     buyerThreadsUsername: row.buyer_threads_username,
     offeredPriceKrw: row.offered_price_krw,
     note: row.note,
-    createdAt: row.created_at.toISOString()
+    createdAt: row.created_at.toISOString(),
   };
 }
 
@@ -234,7 +245,7 @@ async function resetProductSale(client: DbClient, productId: string) {
       WHERE product_id = $1
         AND status <> 'CANCELLED'
     `,
-    [productId]
+    [productId],
   );
 
   await client.query(
@@ -244,15 +255,17 @@ async function resetProductSale(client: DbClient, productId: string) {
           updated_at = NOW()
       WHERE id = $1
     `,
-    [productId]
+    [productId],
   );
 }
 
-function normalizeCreateProductInput(input: CreateProductInput): CreateProductInput {
+function normalizeCreateProductInput(
+  input: CreateProductInput,
+): CreateProductInput {
   const normalizedInput: CreateProductInput = {
     ...input,
     saleStartsAt: input.saleStartsAt ?? new Date().toISOString(),
-    saleEndsAt: input.saleEndsAt ?? null
+    saleEndsAt: input.saleEndsAt ?? null,
   };
 
   if (!normalizedInput.isFreeShare) {
@@ -262,11 +275,13 @@ function normalizeCreateProductInput(input: CreateProductInput): CreateProductIn
   return {
     ...normalizedInput,
     priceKrw: 0,
-    allowPriceOffer: false
+    allowPriceOffer: false,
   };
 }
 
-function normalizeUpdateProductInput(input: UpdateProductInput): UpdateProductInput {
+function normalizeUpdateProductInput(
+  input: UpdateProductInput,
+): UpdateProductInput {
   if (input.isFreeShare !== true) {
     return input;
   }
@@ -274,27 +289,42 @@ function normalizeUpdateProductInput(input: UpdateProductInput): UpdateProductIn
   return {
     ...input,
     priceKrw: 0,
-    allowPriceOffer: false
+    allowPriceOffer: false,
   };
 }
 
-function assertValidProductPricing(input: { isFreeShare?: boolean; priceKrw?: number }) {
+function assertValidProductPricing(input: {
+  isFreeShare?: boolean;
+  priceKrw?: number;
+}) {
   if (input.isFreeShare) {
     return;
   }
 
   if (input.priceKrw !== undefined && input.priceKrw <= 0) {
-    throw new AppError("무료 나눔이 아닌 상품 가격은 1원 이상이어야 합니다.", 400);
+    throw new AppError(
+      "무료 나눔이 아닌 상품 가격은 1원 이상이어야 합니다.",
+      400,
+    );
   }
 }
 
-function assertValidSalePeriod(input: { saleStartsAt?: string | null; saleEndsAt?: string | null }) {
+function assertValidSalePeriod(input: {
+  saleStartsAt?: string | null;
+  saleEndsAt?: string | null;
+}) {
   if (!input.saleStartsAt || !input.saleEndsAt) {
     return;
   }
 
-  if (new Date(input.saleEndsAt).getTime() <= new Date(input.saleStartsAt).getTime()) {
-    throw new AppError("판매 종료 일시는 판매 시작 일시보다 뒤여야 합니다.", 400);
+  if (
+    new Date(input.saleEndsAt).getTime() <=
+    new Date(input.saleStartsAt).getTime()
+  ) {
+    throw new AppError(
+      "판매 종료 일시는 판매 시작 일시보다 뒤여야 합니다.",
+      400,
+    );
   }
 }
 
@@ -312,7 +342,7 @@ function getSalePeriodSnapshot(input: {
 }) {
   return {
     saleStartsAt: (input.published_at ?? input.created_at).toISOString(),
-    saleEndsAt: input.sale_ends_at ? input.sale_ends_at.toISOString() : null
+    saleEndsAt: input.sale_ends_at ? input.sale_ends_at.toISOString() : null,
   };
 }
 
@@ -366,7 +396,9 @@ function buildProductUpdateStatement(parsed: UpdateProductInput) {
         ? `'GAME_CHANCE'::product_purchase_type`
         : `'INSTANT_BUY'::product_purchase_type`;
     const gameTypeSql =
-      parsed.purchaseType === "GAME_CHANCE" ? `'ROCK_PAPER_SCISSORS'::game_type` : "NULL";
+      parsed.purchaseType === "GAME_CHANCE"
+        ? `'ROCK_PAPER_SCISSORS'::game_type`
+        : "NULL";
 
     assignments.push(`purchase_type = ${purchaseTypeSql}`);
     assignments.push(`game_type = ${gameTypeSql}`);
@@ -384,35 +416,49 @@ function sanitizeCloudinaryPathSegment(value: string) {
   return value.trim().replace(/[^a-zA-Z0-9._-]/g, "_");
 }
 
-function getCloudinaryProductFolder(identity: { userId: string; threadsUsername?: string | null }) {
+function getCloudinaryProductFolder(identity: {
+  userId: string;
+  threadsUsername?: string | null;
+}) {
   const trimmed = env.CLOUDINARY_UPLOAD_FOLDER.replace(/\/+$/, "");
   const baseFolder = trimmed.endsWith("/products")
     ? trimmed.slice(0, Math.max(0, trimmed.length - "/products".length))
     : trimmed;
-  const folderOwner = sanitizeCloudinaryPathSegment(identity.threadsUsername || identity.userId);
+  const folderOwner = sanitizeCloudinaryPathSegment(
+    identity.threadsUsername || identity.userId,
+  );
 
   return `${baseFolder || "jinmarket"}/products/${folderOwner}`;
 }
 
-function getCloudinaryProfileFolder(identity: { userId: string; threadsUsername?: string | null }) {
+function getCloudinaryProfileFolder(identity: {
+  userId: string;
+  threadsUsername?: string | null;
+}) {
   const trimmed = env.CLOUDINARY_UPLOAD_FOLDER.replace(/\/+$/, "");
   const baseFolder = trimmed.endsWith("/products")
     ? trimmed.slice(0, Math.max(0, trimmed.length - "/products".length))
     : trimmed;
-  const folderOwner = sanitizeCloudinaryPathSegment(identity.threadsUsername || identity.userId);
+  const folderOwner = sanitizeCloudinaryPathSegment(
+    identity.threadsUsername || identity.userId,
+  );
 
   return `${baseFolder || "jinmarket"}/profiles/${folderOwner}`;
 }
 
 function signCloudinaryFolderUpload(folder: string): UploadSignatureResponse {
-  if (!env.CLOUDINARY_CLOUD_NAME || !env.CLOUDINARY_API_KEY || !env.CLOUDINARY_API_SECRET) {
+  if (
+    !env.CLOUDINARY_CLOUD_NAME ||
+    !env.CLOUDINARY_API_KEY ||
+    !env.CLOUDINARY_API_SECRET
+  ) {
     throw new AppError("Cloudinary 환경 변수가 아직 설정되지 않았습니다.", 500);
   }
 
   const timestamp = Math.floor(Date.now() / 1000);
   const signature = cloudinary.utils.api_sign_request(
     { folder, timestamp },
-    env.CLOUDINARY_API_SECRET
+    env.CLOUDINARY_API_SECRET,
   );
 
   return {
@@ -420,27 +466,32 @@ function signCloudinaryFolderUpload(folder: string): UploadSignatureResponse {
     apiKey: env.CLOUDINARY_API_KEY,
     folder,
     timestamp,
-    signature
+    signature,
   };
 }
 
 function assertValidProductImages(images: ProductImage[]) {
   if (images.length > MAX_PRODUCT_IMAGES) {
-    throw new AppError(`?곹뭹 ?대?吏??理쒕? ${MAX_PRODUCT_IMAGES}?κ퉴吏 ?깅줉?????덉뒿?덈떎.`, 400);
+    throw new AppError(
+      `상품 이미지는 최대 ${MAX_PRODUCT_IMAGES}개까지만 업로드할 수 있습니다.`,
+      400,
+    );
   }
 
   const primaryImages = images.filter((image) => image.isPrimary);
   if (primaryImages.length !== 1) {
-    throw new AppError("????대?吏???뺥솗?????μ씠?댁빞 ?⑸땲??", 400);
+    throw new AppError("상품 이미지는 하나만 설정할 수 있습니다.", 400);
   }
 }
 
 async function replaceProductImages(
   client: DbClient,
   productId: string,
-  images: ProductImage[]
+  images: ProductImage[],
 ) {
-  await client.query("DELETE FROM product_images WHERE product_id = $1", [productId]);
+  await client.query("DELETE FROM product_images WHERE product_id = $1", [
+    productId,
+  ]);
 
   for (const image of images) {
     await client.query(
@@ -466,8 +517,8 @@ async function replaceProductImages(
         image.height ?? null,
         image.bytes ?? null,
         image.sortOrder,
-        image.isPrimary
-      ]
+        image.isPrimary,
+      ],
     );
   }
 }
@@ -480,9 +531,9 @@ async function destroyCloudinaryImages(publicIds: string[]) {
   await Promise.allSettled(
     publicIds.map((publicId) =>
       cloudinary.uploader.destroy(publicId, {
-        resource_type: "image"
-      })
-    )
+        resource_type: "image",
+      }),
+    ),
   );
 }
 
@@ -515,13 +566,16 @@ export async function listProducts() {
       WHERE p.status = 'OPEN'
         AND ${buildSaleActiveSql("p")}
       ORDER BY p.created_at DESC
-    `
+    `,
   );
 
   return result.rows.map(mapProductCard);
 }
 
-export async function getProductDetail(productId: string, viewerId?: string | null): Promise<ProductDetail> {
+export async function getProductDetail(
+  productId: string,
+  viewerId?: string | null,
+): Promise<ProductDetail> {
   const productResult = await query<ProductCardRow>(
     `
       SELECT
@@ -549,7 +603,7 @@ export async function getProductDetail(productId: string, viewerId?: string | nu
       LEFT JOIN product_images pi ON pi.product_id = p.id AND pi.is_primary = TRUE
       WHERE p.id = $1
     `,
-    [productId]
+    [productId],
   );
 
   const product = productResult.rows[0];
@@ -565,7 +619,7 @@ export async function getProductDetail(productId: string, viewerId?: string | nu
       WHERE product_id = $1
       ORDER BY sort_order ASC
     `,
-    [productId]
+    [productId],
   );
 
   const attemptResult = viewerId
@@ -585,12 +639,14 @@ export async function getProductDetail(productId: string, viewerId?: string | nu
           WHERE gpa.product_id = $1 AND gpa.user_id = $2
           ORDER BY gpa.played_at DESC, gpa.created_at DESC
         `,
-        [productId, viewerId]
+        [productId, viewerId],
       )
     : { rows: [] as GameAttemptRow[] };
 
   const myAttempts = attemptResult.rows.map(mapAttempt);
-  const myGameProgress = viewerId ? summarizeGamePurchaseSeries(myAttempts) : null;
+  const myGameProgress = viewerId
+    ? summarizeGamePurchaseSeries(myAttempts)
+    : null;
 
   const orderResult = await query<OrderRow>(
     `
@@ -616,27 +672,36 @@ export async function getProductDetail(productId: string, viewerId?: string | nu
       WHERE o.product_id = $1
         AND o.status <> 'CANCELLED'
     `,
-    [productId]
+    [productId],
   );
 
   const soldOrder = orderResult.rows[0]
-    ? orderResult.rows[0].buyer_id === viewerId || product.seller_id === viewerId
+    ? orderResult.rows[0].buyer_id === viewerId ||
+      product.seller_id === viewerId
       ? mapOrder(orderResult.rows[0])
       : null
     : null;
 
   return {
     ...mapProductCard(product),
-    sellerId: product.is_anonymous && product.seller_id !== viewerId ? null : product.seller_id,
+    sellerId:
+      product.is_anonymous && product.seller_id !== viewerId
+        ? null
+        : product.seller_id,
     images: imagesResult.rows.map(mapProductImage),
     myGameAttempt: myAttempts[0] ?? null,
     myGameProgress,
-    soldOrder
+    soldOrder,
   };
 }
 
-export async function createProduct(sellerId: string, input: CreateProductInput) {
-  const parsed = normalizeCreateProductInput(createProductSchema.parse(input) as CreateProductInput);
+export async function createProduct(
+  sellerId: string,
+  input: CreateProductInput,
+) {
+  const parsed = normalizeCreateProductInput(
+    createProductSchema.parse(input) as CreateProductInput,
+  );
   assertValidProductPricing(parsed);
   assertValidSalePeriod(parsed);
   assertValidProductImages(parsed.images);
@@ -692,8 +757,8 @@ export async function createProduct(sellerId: string, input: CreateProductInput)
         parsed.allowPriceOffer,
         parsed.purchaseType,
         parsed.saleStartsAt,
-        parsed.saleEndsAt
-      ]
+        parsed.saleEndsAt,
+      ],
     );
 
     const insertedProductId = productResult.rows[0].id;
@@ -722,8 +787,8 @@ export async function createProduct(sellerId: string, input: CreateProductInput)
           image.height ?? null,
           image.bytes ?? null,
           image.sortOrder,
-          image.isPrimary
-        ]
+          image.isPrimary,
+        ],
       );
     }
 
@@ -733,17 +798,27 @@ export async function createProduct(sellerId: string, input: CreateProductInput)
   return getSellerProductDetail(sellerId, productId);
 }
 
-export async function updateProduct(sellerId: string, productId: string, input: UpdateProductInput) {
-  const parsed = normalizeUpdateProductInput(updateProductSchema.parse(input) as UpdateProductInput);
+export async function updateProduct(
+  sellerId: string,
+  productId: string,
+  input: UpdateProductInput,
+) {
+  const parsed = normalizeUpdateProductInput(
+    updateProductSchema.parse(input) as UpdateProductInput,
+  );
   assertValidProductPricing(parsed);
   if (parsed.saleStartsAt !== undefined || parsed.saleEndsAt !== undefined) {
-    const currentProduct = await query<{ published_at: Date | null; created_at: Date; sale_ends_at: Date | null }>(
+    const currentProduct = await query<{
+      published_at: Date | null;
+      created_at: Date;
+      sale_ends_at: Date | null;
+    }>(
       `
         SELECT published_at, created_at, sale_ends_at
         FROM products
         WHERE id = $1 AND seller_id = $2
       `,
-      [productId, sellerId]
+      [productId, sellerId],
     );
 
     const row = currentProduct.rows[0];
@@ -755,7 +830,10 @@ export async function updateProduct(sellerId: string, productId: string, input: 
     const currentSalePeriod = getSalePeriodSnapshot(row);
     assertValidSalePeriod({
       saleStartsAt: parsed.saleStartsAt ?? currentSalePeriod.saleStartsAt,
-      saleEndsAt: parsed.saleEndsAt !== undefined ? parsed.saleEndsAt : currentSalePeriod.saleEndsAt
+      saleEndsAt:
+        parsed.saleEndsAt !== undefined
+          ? parsed.saleEndsAt
+          : currentSalePeriod.saleEndsAt,
     });
   }
 
@@ -771,14 +849,20 @@ export async function updateProduct(sellerId: string, productId: string, input: 
       SET ${assignments.join(", ")}, updated_at = NOW()
       WHERE id = $1 AND seller_id = $2
     `,
-    [productId, sellerId, ...values]
+    [productId, sellerId, ...values],
   );
 
   return getSellerProductDetail(sellerId, productId);
 }
 
-export async function updateSellerProduct(sellerId: string, productId: string, input: UpdateProductInput) {
-  const parsed = normalizeUpdateProductInput(updateProductSchema.parse(input) as UpdateProductInput);
+export async function updateSellerProduct(
+  sellerId: string,
+  productId: string,
+  input: UpdateProductInput,
+) {
+  const parsed = normalizeUpdateProductInput(
+    updateProductSchema.parse(input) as UpdateProductInput,
+  );
   assertValidProductPricing(parsed);
   const nextImages = parsed.images;
   const isReopeningProduct = parsed.status === "OPEN";
@@ -808,7 +892,7 @@ export async function updateSellerProduct(sellerId: string, productId: string, i
         WHERE id = $1
         FOR UPDATE
       `,
-      [productId]
+      [productId],
     );
 
     const ownerRow = ownershipResult.rows[0];
@@ -824,7 +908,10 @@ export async function updateSellerProduct(sellerId: string, productId: string, i
     const currentSalePeriod = getSalePeriodSnapshot(ownerRow);
     assertValidSalePeriod({
       saleStartsAt: parsed.saleStartsAt ?? currentSalePeriod.saleStartsAt,
-      saleEndsAt: parsed.saleEndsAt !== undefined ? parsed.saleEndsAt : currentSalePeriod.saleEndsAt
+      saleEndsAt:
+        parsed.saleEndsAt !== undefined
+          ? parsed.saleEndsAt
+          : currentSalePeriod.saleEndsAt,
     });
 
     if (assignments.length > 0) {
@@ -834,7 +921,7 @@ export async function updateSellerProduct(sellerId: string, productId: string, i
           SET ${assignments.join(", ")}, updated_at = NOW()
           WHERE id = $1 AND seller_id = $2
         `,
-        [productId, sellerId, ...values]
+        [productId, sellerId, ...values],
       );
     }
 
@@ -849,10 +936,12 @@ export async function updateSellerProduct(sellerId: string, productId: string, i
           FROM product_images
           WHERE product_id = $1
         `,
-        [productId]
+        [productId],
       );
 
-      previousImagePublicIds = imageResult.rows.map((row) => row.provider_public_id);
+      previousImagePublicIds = imageResult.rows.map(
+        (row) => row.provider_public_id,
+      );
       await replaceProductImages(client, productId, nextImages);
     }
   });
@@ -875,17 +964,20 @@ export async function deleteProduct(sellerId: string, productId: string) {
         WHERE id = $1
         FOR UPDATE
       `,
-      [productId]
+      [productId],
     );
 
     const product = productResult.rows[0];
 
     if (!product) {
-      throw new AppError("?곹뭹??李얠쓣 ???놁뒿?덈떎.", 404);
+      throw new AppError("상품을 찾을 수 없습니다.", 404);
     }
 
     if (product.seller_id !== sellerId) {
-      throw new AppError("?대떦 ?곹뭹????젣??沅뚰븳???놁뒿?덈떎.", 403);
+      throw new AppError(
+        "해당 상품의 판매자만 게임 시도를 조회할 수 있습니다.",
+        403,
+      );
     }
 
     const orderResult = await client.query<{ id: string }>(
@@ -894,11 +986,11 @@ export async function deleteProduct(sellerId: string, productId: string) {
         FROM orders
         WHERE product_id = $1
       `,
-      [productId]
+      [productId],
     );
 
     if (orderResult.rows[0]) {
-      throw new AppError("援щℓ ?대젰???덈뒗 ?곹뭹? ??젣?????놁뒿?덈떎.", 409);
+      throw new AppError("이미 주문된 상품은 삭제할 수 없습니다.", 409);
     }
 
     const imageResult = await client.query<{ provider_public_id: string }>(
@@ -907,12 +999,15 @@ export async function deleteProduct(sellerId: string, productId: string) {
         FROM product_images
         WHERE product_id = $1
       `,
-      [productId]
+      [productId],
     );
 
     imagePublicIds = imageResult.rows.map((row) => row.provider_public_id);
 
-    await client.query("DELETE FROM products WHERE id = $1 AND seller_id = $2", [productId, sellerId]);
+    await client.query(
+      "DELETE FROM products WHERE id = $1 AND seller_id = $2",
+      [productId, sellerId],
+    );
   });
 
   if (imagePublicIds.length > 0) {
@@ -920,7 +1015,9 @@ export async function deleteProduct(sellerId: string, productId: string) {
   }
 }
 
-export async function listSellerProducts(sellerId: string): Promise<SellerProductRecord[]> {
+export async function listSellerProducts(
+  sellerId: string,
+): Promise<SellerProductRecord[]> {
   const result = await query<ProductCardRow>(
     `
       SELECT
@@ -952,18 +1049,21 @@ export async function listSellerProducts(sellerId: string): Promise<SellerProduc
       WHERE p.seller_id = $1
       ORDER BY p.created_at DESC
     `,
-    [sellerId]
+    [sellerId],
   );
 
   return result.rows.map((row) => ({
     ...mapProductCard(row),
     soldOrderId: row.sold_order_id ?? null,
     soldBuyerDisplayName: row.sold_buyer_display_name ?? null,
-    soldBuyerThreadsUsername: row.sold_buyer_threads_username ?? null
+    soldBuyerThreadsUsername: row.sold_buyer_threads_username ?? null,
   }));
 }
 
-export async function getSellerProductDetail(sellerId: string, productId: string) {
+export async function getSellerProductDetail(
+  sellerId: string,
+  productId: string,
+) {
   const product = await getProductDetail(productId, sellerId);
 
   if (product.sellerId !== sellerId) {
@@ -973,18 +1073,24 @@ export async function getSellerProductDetail(sellerId: string, productId: string
   return product;
 }
 
-export async function listProductGameAttempts(sellerId: string, productId: string) {
+export async function listProductGameAttempts(
+  sellerId: string,
+  productId: string,
+) {
   const ownershipResult = await query<{ seller_id: string }>(
     "SELECT seller_id FROM products WHERE id = $1",
-    [productId]
+    [productId],
   );
 
   if (!ownershipResult.rows[0]) {
-    throw new AppError("?곹뭹??李얠쓣 ???놁뒿?덈떎.", 404);
+    throw new AppError("가격 제안을 찾을 수 없습니다.", 404);
   }
 
   if (ownershipResult.rows[0].seller_id !== sellerId) {
-    throw new AppError("?대떦 ?곹뭹 湲곕줉??蹂?沅뚰븳???놁뒿?덈떎.", 403);
+    throw new AppError(
+      "해당 상품의 판매자만 게임 시도를 조회할 수 있습니다.",
+      403,
+    );
   }
 
   const result = await query<GameAttemptRow>(
@@ -1003,17 +1109,22 @@ export async function listProductGameAttempts(sellerId: string, productId: strin
       WHERE gpa.product_id = $1
       ORDER BY gpa.played_at DESC
     `,
-    [productId]
+    [productId],
   );
 
   return result.rows.map(mapAttempt);
 }
 
-export async function createPriceOffer(userId: string, productId: string, input: CreatePriceOfferInput) {
+export async function createPriceOffer(
+  userId: string,
+  productId: string,
+  input: CreatePriceOfferInput,
+) {
   const parsed = createPriceOfferSchema.parse(input);
 
-  return withTransaction(async (client) => {
+  const result = await withTransaction(async (client) => {
     const productResult = await client.query<{
+      title: string;
       seller_id: string;
       status: "DRAFT" | "OPEN" | "SOLD_OUT" | "CANCELLED";
       allow_price_offer: boolean;
@@ -1022,26 +1133,29 @@ export async function createPriceOffer(userId: string, productId: string, input:
       sale_ends_at: Date | null;
     }>(
       `
-        SELECT seller_id, status, allow_price_offer, published_at, created_at, sale_ends_at
+        SELECT title, seller_id, status, allow_price_offer, published_at, created_at, sale_ends_at
         FROM products
         WHERE id = $1
         FOR UPDATE
       `,
-      [productId]
+      [productId],
     );
 
     const product = productResult.rows[0];
 
     if (!product) {
-      throw new AppError("?곹뭹??李얠쓣 ???놁뒿?덈떎.", 404);
+      throw new AppError("가격 제안을 찾을 수 없습니다.", 404);
     }
 
     if (product.seller_id === userId) {
-      throw new AppError("蹂몄씤 ?곹뭹?먮뒗 媛寃??쒖븞??蹂대궪 ???놁뒿?덈떎.", 400);
+      throw new AppError("자신의 가격 제안은 수락할 수 없습니다.", 400);
     }
 
     if (product.status !== "OPEN") {
-      throw new AppError("?먮ℓ以묒씤 ?곹뭹?먮쭔 媛寃??쒖븞??蹂대궪 ???덉뒿?덈떎.", 409);
+      throw new AppError(
+        "판매 중이 아닌 상품의 가격 제안은 수락할 수 없습니다.",
+        409,
+      );
     }
 
     const now = Date.now();
@@ -1080,25 +1194,51 @@ export async function createPriceOffer(userId: string, productId: string, input:
         JOIN users u ON u.id = inserted.buyer_id
         ${accountIdentityJoins("buyer", "u")}
       `,
-      [productId, userId, parsed.offeredPriceKrw, parsed.note || null]
+      [productId, userId, parsed.offeredPriceKrw, parsed.note || null],
     );
 
-    return mapPriceOffer(inserted.rows[0]);
+    return {
+      item: mapPriceOffer(inserted.rows[0]),
+      sellerId: product.seller_id,
+      productTitle: product.title,
+      buyerDisplayName: inserted.rows[0].buyer_display_name,
+    };
   });
+
+  try {
+    await sendPushNotificationToUser({
+      userId: result.sellerId,
+      app: "ADMIN",
+      title: "새 가격 제안이 도착했어요",
+      body: `${result.buyerDisplayName}님이 ${result.productTitle}에 새 가격을 제안했어요.`,
+      url: `/products/${productId}`,
+      tag: `price-offer:${result.item.id}`,
+    });
+  } catch (error) {
+    console.error("Failed to send seller price-offer push notification", error);
+  }
+
+  return result.item;
 }
 
-export async function listProductPriceOffers(sellerId: string, productId: string) {
+export async function listProductPriceOffers(
+  sellerId: string,
+  productId: string,
+) {
   const ownershipResult = await query<{ seller_id: string }>(
     "SELECT seller_id FROM products WHERE id = $1",
-    [productId]
+    [productId],
   );
 
   if (!ownershipResult.rows[0]) {
-    throw new AppError("?곹뭹??李얠쓣 ???놁뒿?덈떎.", 404);
+    throw new AppError("가격 제안을 찾을 수 없습니다.", 404);
   }
 
   if (ownershipResult.rows[0].seller_id !== sellerId) {
-    throw new AppError("?대떦 ?곹뭹 湲곕줉??蹂?沅뚰븳???놁뒿?덈떎.", 403);
+    throw new AppError(
+      "해당 상품의 판매자만 가격 제안을 조회할 수 있습니다.",
+      403,
+    );
   }
 
   const result = await query<PriceOfferRow>(
@@ -1118,14 +1258,20 @@ export async function listProductPriceOffers(sellerId: string, productId: string
       WHERE po.product_id = $1
       ORDER BY po.created_at DESC
     `,
-    [productId]
+    [productId],
   );
 
   return result.rows.map(mapPriceOffer);
 }
 
-export async function acceptPriceOffer(sellerId: string, productId: string, offerId: string) {
+export async function acceptPriceOffer(
+  sellerId: string,
+  productId: string,
+  offerId: string,
+) {
   let acceptedOrder: OrderRecord | null = null;
+  let acceptedBuyerId: string | null = null;
+  let acceptedProductTitle: string | null = null;
 
   await withTransaction(async (client) => {
     const productResult = await client.query<{
@@ -1143,13 +1289,13 @@ export async function acceptPriceOffer(sellerId: string, productId: string, offe
         WHERE id = $1
         FOR UPDATE
       `,
-      [productId]
+      [productId],
     );
 
     const product = productResult.rows[0];
 
     if (!product) {
-      throw new AppError("?곹뭹??李얠쓣 ???놁뒿?덈떎.", 404);
+      throw new AppError("가격 제안을 찾을 수 없습니다.", 404);
     }
 
     if (product.seller_id !== sellerId) {
@@ -1157,7 +1303,10 @@ export async function acceptPriceOffer(sellerId: string, productId: string, offe
     }
 
     if (product.status !== "OPEN") {
-      throw new AppError("?먮ℓ 以묒씤 ?곹뭹留?媛寃??쒖븞???섎씫?????덉뒿?덈떎.", 409);
+      throw new AppError(
+        "판매 중이 아닌 상품의 가격 제안은 수락할 수 없습니다.",
+        409,
+      );
     }
 
     const now = Date.now();
@@ -1165,11 +1314,17 @@ export async function acceptPriceOffer(sellerId: string, productId: string, offe
     const saleEndsAt = product.sale_ends_at?.getTime() ?? null;
 
     if (saleStartsAt > now) {
-      throw new AppError("아직 판매 시작 전인 상품의 제안은 수락할 수 없습니다.", 409);
+      throw new AppError(
+        "아직 판매 시작 전인 상품의 제안은 수락할 수 없습니다.",
+        409,
+      );
     }
 
     if (saleEndsAt !== null && saleEndsAt < now) {
-      throw new AppError("판매 기간이 종료된 상품의 제안은 수락할 수 없습니다.", 409);
+      throw new AppError(
+        "판매 기간이 종료된 상품의 제안은 수락할 수 없습니다.",
+        409,
+      );
     }
 
     const offerResult = await client.query<PriceOfferRow>(
@@ -1189,17 +1344,17 @@ export async function acceptPriceOffer(sellerId: string, productId: string, offe
         WHERE po.id = $1 AND po.product_id = $2
         FOR UPDATE OF po
       `,
-      [offerId, productId]
+      [offerId, productId],
     );
 
     const offer = offerResult.rows[0];
 
     if (!offer) {
-      throw new AppError("媛寃??쒖븞??李얠쓣 ???놁뒿?덈떎.", 404);
+      throw new AppError("가격 제안을 찾을 수 없습니다.", 404);
     }
 
     if (offer.buyer_id === sellerId) {
-      throw new AppError("蹂몄씤 媛寃??쒖븞? ?섎씫?????놁뒿?덈떎.", 400);
+      throw new AppError("자신의 가격 제안은 수락할 수 없습니다.", 400);
     }
 
     try {
@@ -1229,7 +1384,13 @@ export async function acceptPriceOffer(sellerId: string, productId: string, offe
           ${accountIdentityJoins("seller")}
           ${accountIdentityJoins("buyer")}
         `,
-        [product.id, sellerId, offer.buyer_id, offer.note ?? null, product.title]
+        [
+          product.id,
+          sellerId,
+          offer.buyer_id,
+          offer.note ?? null,
+          product.title,
+        ],
       );
 
       await client.query(
@@ -1240,13 +1401,15 @@ export async function acceptPriceOffer(sellerId: string, productId: string, offe
               updated_at = NOW()
           WHERE id = $1
         `,
-        [product.id]
+        [product.id],
       );
 
       acceptedOrder = mapOrder(orderResult.rows[0]);
+      acceptedBuyerId = orderResult.rows[0].buyer_id;
+      acceptedProductTitle = orderResult.rows[0].product_title;
     } catch (error) {
       if (isPgUniqueError(error)) {
-        throw new AppError("?대? ?ㅻⅨ 援щℓ媛 ?꾨즺???곹뭹?낅땲??", 409);
+        throw new AppError("이미 처리된 가격 제안입니다.", 409);
       }
 
       throw error;
@@ -1254,12 +1417,32 @@ export async function acceptPriceOffer(sellerId: string, productId: string, offe
   });
 
   if (!acceptedOrder) {
-    throw new AppError("媛寃??쒖븞???섎씫?섏? 紐삵뻽?듬땲??", 500);
+    throw new AppError("주문 생성에 실패했습니다.", 500);
+  }
+
+  const finalizedOrder = acceptedOrder as OrderRecord;
+
+  if (acceptedBuyerId && acceptedProductTitle) {
+    try {
+      await sendPushNotificationToUser({
+        userId: acceptedBuyerId,
+        app: "SHOP",
+        title: "가격 제안이 수락되었어요",
+        body: `${acceptedProductTitle} 상품의 가격 제안이 수락되어 주문이 생성되었어요.`,
+        url: "/my/orders",
+        tag: `price-offer-accepted:${finalizedOrder.id}`,
+      });
+    } catch (error) {
+      console.error(
+        "Failed to send buyer price-offer acceptance push notification",
+        error,
+      );
+    }
   }
 
   return {
-    order: acceptedOrder,
-    item: await getSellerProductDetail(sellerId, productId)
+    order: finalizedOrder,
+    item: await getSellerProductDetail(sellerId, productId),
   };
 }
 
@@ -1288,7 +1471,7 @@ export async function listSellerOrders(sellerId: string) {
       WHERE o.seller_id = $1
       ORDER BY o.ordered_at DESC
     `,
-    [sellerId]
+    [sellerId],
   );
 
   return result.rows.map(mapOrder);
@@ -1319,26 +1502,29 @@ export async function listMyOrders(userId: string) {
       WHERE o.buyer_id = $1
       ORDER BY o.ordered_at DESC
     `,
-    [userId]
+    [userId],
   );
 
   return result.rows.map(mapOrder);
 }
 
-export function signCloudinaryUpload(user: SessionUser): UploadSignatureResponse {
+export function signCloudinaryUpload(
+  user: SessionUser,
+): UploadSignatureResponse {
   const folder = getCloudinaryProductFolder({
     userId: user.id,
-    threadsUsername: user.threadsUsername
+    threadsUsername: user.threadsUsername,
   });
   return signCloudinaryFolderUpload(folder);
 }
 
-export function signProfileImageUpload(user: SessionUser): UploadSignatureResponse {
+export function signProfileImageUpload(
+  user: SessionUser,
+): UploadSignatureResponse {
   const folder = getCloudinaryProfileFolder({
     userId: user.id,
-    threadsUsername: user.threadsUsername
+    threadsUsername: user.threadsUsername,
   });
 
   return signCloudinaryFolderUpload(folder);
 }
-

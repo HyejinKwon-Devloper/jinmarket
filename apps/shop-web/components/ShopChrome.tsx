@@ -13,6 +13,7 @@ import {
 import { cn } from "../lib/ui";
 import { ProfileAvatar } from "./ProfileAvatar";
 import { PwaInstallPrompt } from "./PwaInstallPrompt";
+import { PushNotificationPrompt } from "./PushNotificationPrompt";
 import { Button, LinkButton } from "./ui/Button";
 import {
   ArrowRightIcon,
@@ -327,6 +328,7 @@ export function ShopChrome({ children }: { children: React.ReactNode }) {
                 <div className="mb-4 h-px bg-[var(--buyer-border)]" />
                 <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center">
                   <PwaInstallPrompt />
+                  <PushNotificationPrompt app="SHOP" isLoggedIn={Boolean(user)} />
                   <a
                     className="inline-flex min-h-11 items-center justify-center rounded-xl border border-[var(--buyer-border)] bg-white px-4 text-[13px] font-semibold text-[var(--buyer-dark)] shadow-sm transition hover:bg-[var(--buyer-softest)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--buyer-accent)] focus-visible:ring-offset-2 sm:text-sm"
                     href={adminAppUrl}

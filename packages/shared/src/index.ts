@@ -4,7 +4,12 @@ export const MAX_EVENT_IMAGES = 4;
 export const purchaseTypes = ["INSTANT_BUY", "GAME_CHANCE"] as const;
 export type PurchaseType = (typeof purchaseTypes)[number];
 
-export const productStatuses = ["DRAFT", "OPEN", "SOLD_OUT", "CANCELLED"] as const;
+export const productStatuses = [
+  "DRAFT",
+  "OPEN",
+  "SOLD_OUT",
+  "CANCELLED",
+] as const;
 export type ProductStatus = (typeof productStatuses)[number];
 
 export const gameChoices = ["ROCK", "PAPER", "SCISSORS"] as const;
@@ -14,25 +19,40 @@ export const gameResults = ["WIN", "LOSE", "DRAW"] as const;
 export type GameResult = (typeof gameResults)[number];
 
 export const GAME_PURCHASE_REQUIRED_WINS = 2;
-export const GAME_PURCHASE_MAX_DECISIVE_ROUNDS = GAME_PURCHASE_REQUIRED_WINS * 2 - 1;
+export const GAME_PURCHASE_MAX_DECISIVE_ROUNDS =
+  GAME_PURCHASE_REQUIRED_WINS * 2 - 1;
 
 export const orderStatuses = [
   "PENDING_CONTACT",
   "CONTACTED",
   "TRANSFER_PENDING",
   "COMPLETED",
-  "CANCELLED"
+  "CANCELLED",
 ] as const;
 export type OrderStatus = (typeof orderStatuses)[number];
 
-export const orderSources = ["INSTANT_BUY", "GAME_CHANCE_WIN", "PRICE_OFFER_ACCEPTED"] as const;
+export const orderSources = [
+  "INSTANT_BUY",
+  "GAME_CHANCE_WIN",
+  "PRICE_OFFER_ACCEPTED",
+] as const;
 export type OrderSource = (typeof orderSources)[number];
 
-export const sellerAccessRequestStatuses = ["PENDING", "APPROVED", "REJECTED"] as const;
-export type SellerAccessRequestStatus = (typeof sellerAccessRequestStatuses)[number];
+export const sellerAccessRequestStatuses = [
+  "PENDING",
+  "APPROVED",
+  "REJECTED",
+] as const;
+export type SellerAccessRequestStatus =
+  (typeof sellerAccessRequestStatuses)[number];
 
 export const eventRegistrationModes = ["MANUAL", "SHOP_ENTRY"] as const;
 export type EventRegistrationMode = (typeof eventRegistrationModes)[number];
+
+export const pushApps = ["SHOP", "ADMIN"] as const;
+export type PushApp = (typeof pushApps)[number];
+export const pushAudienceRoles = ["ADMIN", "SELLER", "BUYER"] as const;
+export type PushAudienceRole = (typeof pushAudienceRoles)[number];
 
 export interface SessionUser {
   id: string;
@@ -46,7 +66,9 @@ export interface SessionUser {
 
 const cloudinaryProfileImageHostSuffix = "res.cloudinary.com";
 
-export function sanitizeProfileImageUrl(rawProfileImageUrl: string | null | undefined) {
+export function sanitizeProfileImageUrl(
+  rawProfileImageUrl: string | null | undefined,
+) {
   if (typeof rawProfileImageUrl !== "string") {
     return null;
   }
@@ -255,7 +277,11 @@ export interface UpdateProductInput {
   images?: ProductImage[];
 }
 
-export function resolveSafeReturnTo(rawTarget: string | null, fallbackPath: string, origin: string) {
+export function resolveSafeReturnTo(
+  rawTarget: string | null,
+  fallbackPath: string,
+  origin: string,
+) {
   const fallback = new URL(fallbackPath, origin);
 
   if (!rawTarget) {
@@ -264,7 +290,9 @@ export function resolveSafeReturnTo(rawTarget: string | null, fallbackPath: stri
 
   try {
     const parsed = new URL(rawTarget, origin);
-    return parsed.origin === fallback.origin ? parsed.toString() : fallback.toString();
+    return parsed.origin === fallback.origin
+      ? parsed.toString()
+      : fallback.toString();
   } catch {
     return fallback.toString();
   }
@@ -350,4 +378,29 @@ export interface SellerApprovalTotpSetup {
   manualEntryKey: string;
   otpauthUrl: string;
   expiresAt: string;
+}
+
+export interface WebPushSubscriptionPayload {
+  endpoint: string;
+  expirationTime?: number | null;
+  keys: {
+    p256dh: string;
+    auth: string;
+  };
+}
+
+export interface PushAudienceSummary {
+  role: PushAudienceRole;
+  totalUsers: number;
+  subscribedUsers: number;
+}
+
+export interface PushRecipientRecord {
+  userId: string;
+  displayName: string;
+  loginId: string | null;
+  email: string | null;
+  roles: PushAudienceRole[];
+  subscriptionCount: number;
+  lastSeenAt: string | null;
 }
