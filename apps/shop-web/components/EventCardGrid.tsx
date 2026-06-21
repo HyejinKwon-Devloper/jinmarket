@@ -1,8 +1,6 @@
 import Link from "next/link";
 import type { EventCard } from "@jinmarket/shared";
 
-import { getEventCardImageProps } from "../lib/image";
-
 function eventStateLabel(item: EventCard) {
   const now = Date.now();
   const startsAt = new Date(item.startsAt).getTime();
@@ -41,22 +39,8 @@ export function EventCardGrid({
   return (
     <div className="cardGrid">
       {items.map((item, index) => {
-        const image = getEventCardImageProps(item.primaryImageUrl);
-
         return (
           <article className="card" key={item.id}>
-            <img
-              alt={item.title}
-              className="cardImage"
-              decoding="async"
-              fetchPriority={index < 2 ? "high" : "auto"}
-              height={720}
-              loading={index < 4 ? "eager" : "lazy"}
-              sizes={image.sizes}
-              src={image.src}
-              srcSet={image.srcSet}
-              width={720}
-            />
             <div className="cardBody">
               <div className="badgeRow">
                 <span className="badge success">{eventStateLabel(item)}</span>

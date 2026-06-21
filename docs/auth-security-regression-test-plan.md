@@ -2,7 +2,7 @@
 
 ## Goal
 
-Threads OAuth 로그인, 관리자 2차 비밀번호, 판매자 승인, 권한 분기, 개인정보 노출 방지가 현재 의도대로 동작하는지 점검한다.
+Threads OAuth 로그인, 관리자 Google OTP 2차 인증, 판매자 승인, 권한 분기, 개인정보 노출 방지가 현재 의도대로 동작하는지 점검한다.
 
 ## Test Data
 
@@ -16,7 +16,7 @@ Threads OAuth 로그인, 관리자 2차 비밀번호, 판매자 승인, 권한 �
   역할: `BUYER`, `SELLER`
 - `admin_user`
   역할: `BUYER`, `SELLER`, `ADMIN`
-  추가 조건: `SELLER_APPROVAL_ADMIN_PASSWORD` 값을 알고 있어야 함
+  추가 조건: 판매자 승인용 Google OTP가 등록되어 있어야 함
 
 아래 상품 데이터도 준비한다.
 
@@ -146,12 +146,12 @@ Threads OAuth 로그인, 관리자 2차 비밀번호, 판매자 승인, 권한 �
 
 - 대상: `admin_user`
 - 단계:
-  1. 관리자 2차 비밀번호까지 인증한다.
+  1. 관리자 Google OTP까지 인증한다.
   2. `POST /auth/logout`
   3. 다시 로그인 후 `/admin/seller-access/auth` 조회
 - 기대 결과:
   - 재로그인만으로는 `verified=false`
-  - 승인 목록 접근 시 다시 비밀번호 확인이 필요하다.
+  - 승인 목록 접근 시 다시 Google OTP 확인이 필요하다.
 
 ## Role And Access Control
 
@@ -183,7 +183,7 @@ Threads OAuth 로그인, 관리자 2차 비밀번호, 판매자 승인, 권한 �
 - 기대 결과:
   - `{ eligible: false, verified: false }`
 
-### D4. 관리자는 2차 비밀번호 전에는 승인 목록 접근 불가
+### D4. 관리자는 Google OTP 확인 전에는 승인 목록 접근 불가
 
 - 대상: `admin_user`
 - 단계:
@@ -191,23 +191,33 @@ Threads OAuth 로그인, 관리자 2차 비밀번호, 판매자 승인, 권한 �
   2. `GET /admin/seller-access`
 - 기대 결과:
   - HTTP `401`
-  - 관리자 비밀번호 확인 필요 메시지 반환
+  - 관리자 OTP 확인 필요 메시지 반환
 
-### D5. 관리자는 올바른 2차 비밀번호 후 승인 목록 접근 가능
+### D4-1. OTP 미등록 상태에서는 웹에서 신규 등록 불가
 
 - 대상: `admin_user`
 - 단계:
-  1. `POST /admin/seller-access/auth` 로 올바른 비밀번호 전송
+  1. `seller_approval_admin_totp_credentials` 에서 해당 사용자의 row를 제거한다.
+  2. `POST /admin/seller-access/auth/setup`
+- 기대 결과:
+  - HTTP `403`
+  - 운영자가 미리 고정 등록해야 한다는 메시지 반환
+
+### D5. 관리자는 올바른 Google OTP 후 승인 목록 접근 가능
+
+- 대상: `admin_user`
+- 단계:
+  1. `POST /admin/seller-access/auth` 로 올바른 6자리 OTP 전송
   2. `GET /admin/seller-access`
 - 기대 결과:
   - 인증 응답은 성공한다.
   - 승인 목록이 반환된다.
 
-### D6. 관리자 비밀번호 오입력
+### D6. 관리자 OTP 오입력
 
 - 대상: `admin_user`
 - 단계:
-  1. `POST /admin/seller-access/auth` 로 잘못된 비밀번호 전송
+  1. `POST /admin/seller-access/auth` 로 잘못된 6자리 OTP 전송
 - 기대 결과:
   - HTTP `401`
   - 승인 목록 쿠키가 발급되지 않는다.

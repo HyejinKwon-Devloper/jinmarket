@@ -402,6 +402,7 @@ export function ShopChrome({ children }: { children: React.ReactNode }) {
             aria-label="서비스 정책"
             className="flex flex-wrap items-center gap-2.5 text-sm"
           >
+            <PwaInstallPrompt showDismissButton={false} />
             <Link
               className="inline-flex min-h-10 items-center justify-center rounded-full border border-[var(--buyer-border)] bg-[var(--buyer-softest)] px-3.5 font-medium text-[var(--buyer-dark)] transition hover:bg-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--buyer-accent)] focus-visible:ring-offset-2"
               href="/privacy"

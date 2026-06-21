@@ -12,12 +12,12 @@ import {
 } from "../../shared/src/index.js";
 
 import { AppError } from "./errors.js";
-import { allowedOrigins, env } from "./env.js";
+import { allowedOrigins, env, isSellerApprovalAdminLoginId } from "./env.js";
 import {
   clearSellerApprovalAuthCookie,
   clearSessionCookie,
+  getSellerApprovalAdminAuthStatus,
   getSessionUser,
-  hasSellerApprovalAuthCookie,
   loginWithPassword,
   logout,
   requestBuyerAccountActivation,
@@ -37,8 +37,9 @@ import {
   verifyPasswordReset,
   verifySellerEmailVerification,
   verifySignupCode,
-  verifySellerApprovalAdminPassword
+  verifySellerApprovalTotp
 } from "./services/auth-service.js";
+import { consumeRateLimit } from "./utils/rate-limit.js";
 import {
   createEvent,
   createEventEntry,
@@ -79,12 +80,16 @@ type AuthedRequest = Request & {
   sessionUser?: Awaited<ReturnType<typeof getSessionUser>>;
 };
 
+const csrfHeaderName = "x-jinmarket-csrf";
+const csrfHeaderValue = "1";
+const minuteMs = 60 * 1000;
+
 const gamePlaySchema = z.object({
   playerChoice: z.enum(gameChoices)
 });
 
-const sellerApprovalPasswordSchema = z.object({
-  password: z.string().min(1).max(200)
+const sellerApprovalTotpCodeSchema = z.object({
+  code: z.string().trim().regex(/^\d{6}$/)
 });
 
 const loginSchema = z.object({
@@ -196,7 +201,7 @@ function requireAuth(request: AuthedRequest) {
 }
 
 function isApprovalAdmin(user: NonNullable<AuthedRequest["sessionUser"]>) {
-  return user.roles.includes("ADMIN");
+  return user.roles.includes("ADMIN") && isSellerApprovalAdminLoginId(user.threadsUsername);
 }
 
 function requireSellerPortalVerified(request: AuthedRequest) {
@@ -223,20 +228,26 @@ function requireSellerAccess(request: AuthedRequest) {
   throw new AppError("판매자 승인 후 사용할 수 있습니다.", 403);
 }
 
-function requireApprovalAdmin(request: AuthedRequest) {
+async function requireApprovalAdmin(request: AuthedRequest) {
   const user = requireSellerPortalVerified(request);
 
   if (isApprovalAdmin(user)) {
-    const sessionToken = request.cookies?.[env.SESSION_COOKIE_NAME];
-    const approvalCookie = request.cookies?.[sellerApprovalAuthCookieName];
-    const isVerified = hasSellerApprovalAuthCookie({
-      sessionToken,
-      userId: user.id,
-      cookieValue: approvalCookie
+    const authStatus = await getSellerApprovalAdminAuthStatus({
+      user,
+      sessionToken: request.cookies?.[env.SESSION_COOKIE_NAME],
+      cookieValue: request.cookies?.[sellerApprovalAuthCookieName]
     });
 
-    if (!isVerified) {
-      throw new AppError("판매자 승인 관리자 비밀번호 확인이 필요합니다.", 401);
+    if (!authStatus.totpEnabled) {
+      throw new AppError(
+        "판매자 승인용 Google OTP를 먼저 설정해 주세요.",
+        403,
+        "SELLER_APPROVAL_TOTP_SETUP_REQUIRED"
+      );
+    }
+
+    if (!authStatus.verified) {
+      throw new AppError("판매자 승인 관리자 OTP 확인이 필요합니다.", 401, "SELLER_APPROVAL_TOTP_REQUIRED");
     }
 
     return user;
@@ -260,6 +271,10 @@ function getRequiredString(value: unknown, name: string) {
   throw new AppError(`${name} parameter is required.`, 400);
 }
 
+function normalizeRateLimitValue(value?: string | null) {
+  return value?.trim().toLowerCase() || "unknown";
+}
+
 function getOptionalString(value: unknown) {
   if (typeof value === "string" && value.length > 0) {
     return value;
@@ -270,6 +285,72 @@ function getOptionalString(value: unknown) {
   }
 
   return undefined;
+}
+
+function isUnsafeMethod(method: string) {
+  return !["GET", "HEAD", "OPTIONS"].includes(method.toUpperCase());
+}
+
+function getClientIp(request: Request) {
+  const forwardedFor = request.get("x-forwarded-for");
+  const forwardedIp = forwardedFor?.split(",")[0]?.trim();
+
+  if (forwardedIp) {
+    return forwardedIp;
+  }
+
+  return request.ip || request.socket.remoteAddress || "unknown";
+}
+
+function hasTrustedCsrfContext(request: Request) {
+  if (request.get(csrfHeaderName) === csrfHeaderValue) {
+    return true;
+  }
+
+  return [request.get("origin"), request.get("referer")]
+    .map((value) => normalizeOrigin(value))
+    .filter((origin): origin is string => Boolean(origin))
+    .some((origin) => allowedOrigins.includes(origin));
+}
+
+function requireTrustedMutationRequest(request: Request, _response: Response, next: NextFunction) {
+  if (!isUnsafeMethod(request.method) || hasTrustedCsrfContext(request)) {
+    next();
+    return;
+  }
+
+  next(
+    new AppError(
+      "잘못된 요청입니다. 페이지를 새로고침한 뒤 다시 시도해 주세요.",
+      403,
+      "CSRF_VALIDATION_FAILED"
+    )
+  );
+}
+
+function assertRateLimit(
+  response: Response,
+  input: {
+    scope: string;
+    key: string;
+    max: number;
+    windowMs: number;
+    message: string;
+    code: string;
+  }
+) {
+  const result = consumeRateLimit({
+    key: `${input.scope}:${input.key}`,
+    max: input.max,
+    windowMs: input.windowMs
+  });
+
+  if (result.allowed) {
+    return;
+  }
+
+  response.setHeader("Retry-After", String(Math.max(Math.ceil(result.retryAfterMs / 1000), 1)));
+  throw new AppError(input.message, 429, input.code);
 }
 
 function asyncHandler(
@@ -351,6 +432,7 @@ export function createApp() {
       credentials: true
     })
   );
+  app.use(requireTrustedMutationRequest);
   app.use(cookieParser());
   app.use(express.json({ limit: "2mb" }));
   app.use(attachSessionUser);
@@ -372,6 +454,26 @@ export function createApp() {
     "/auth/login",
     asyncHandler(async (request, response) => {
       const parsed = loginSchema.parse(request.body) as Parameters<typeof loginWithPassword>[0];
+      const clientIp = getClientIp(request);
+      const normalizedLoginId = normalizeRateLimitValue(parsed.loginId);
+
+      assertRateLimit(response, {
+        scope: "auth-login-ip",
+        key: clientIp,
+        max: 30,
+        windowMs: 10 * minuteMs,
+        message: "로그인 시도가 너무 많습니다. 잠시 후 다시 시도해 주세요.",
+        code: "LOGIN_RATE_LIMITED"
+      });
+      assertRateLimit(response, {
+        scope: "auth-login-account",
+        key: `${clientIp}:${normalizedLoginId}`,
+        max: 10,
+        windowMs: 10 * minuteMs,
+        message: "로그인 시도가 너무 많습니다. 잠시 후 다시 시도해 주세요.",
+        code: "LOGIN_RATE_LIMITED"
+      });
+
       const session = await loginWithPassword(parsed);
       setSessionCookie(response, session.sessionToken, session.expiresAt);
       response.json({
@@ -385,6 +487,26 @@ export function createApp() {
     "/auth/register",
     asyncHandler(async (request, response) => {
       const parsed = buyerSignupSchema.parse(request.body) as Parameters<typeof registerBuyerAccount>[0];
+      const clientIp = getClientIp(request);
+      const signupTargetKey = `${normalizeRateLimitValue(parsed.loginId)}:${normalizeRateLimitValue(parsed.email)}`;
+
+      assertRateLimit(response, {
+        scope: "auth-register-ip",
+        key: clientIp,
+        max: 8,
+        windowMs: 15 * minuteMs,
+        message: "회원가입 요청이 너무 많습니다. 잠시 후 다시 시도해 주세요.",
+        code: "REGISTER_RATE_LIMITED"
+      });
+      assertRateLimit(response, {
+        scope: "auth-register-target",
+        key: `${clientIp}:${signupTargetKey}`,
+        max: 3,
+        windowMs: 15 * minuteMs,
+        message: "회원가입 요청이 너무 많습니다. 잠시 후 다시 시도해 주세요.",
+        code: "REGISTER_RATE_LIMITED"
+      });
+
       const session = await registerBuyerAccount(parsed);
       setSessionCookie(response, session.sessionToken, session.expiresAt);
       response.status(201).json({
@@ -400,6 +522,26 @@ export function createApp() {
       const parsed = signupRequestSchema.parse(request.body) as Parameters<
         typeof requestSignupVerification
       >[0];
+      const clientIp = getClientIp(request);
+      const signupTargetKey = `${normalizeRateLimitValue(parsed.loginId)}:${normalizeRateLimitValue(parsed.email)}`;
+
+      assertRateLimit(response, {
+        scope: "auth-signup-request-ip",
+        key: clientIp,
+        max: 12,
+        windowMs: 15 * minuteMs,
+        message: "인증번호 요청이 너무 많습니다. 잠시 후 다시 시도해 주세요.",
+        code: "SIGNUP_REQUEST_RATE_LIMITED"
+      });
+      assertRateLimit(response, {
+        scope: "auth-signup-request-target",
+        key: `${clientIp}:${signupTargetKey}`,
+        max: 4,
+        windowMs: 15 * minuteMs,
+        message: "인증번호 요청이 너무 많습니다. 잠시 후 다시 시도해 주세요.",
+        code: "SIGNUP_REQUEST_RATE_LIMITED"
+      });
+
       await requestSignupVerification(parsed);
       response.status(201).json({
         ok: true,
@@ -412,6 +554,26 @@ export function createApp() {
     "/auth/register/verify",
     asyncHandler(async (request, response) => {
       const parsed = signupVerifySchema.parse(request.body) as Parameters<typeof verifySignupCode>[0];
+      const clientIp = getClientIp(request);
+      const signupTargetKey = `${normalizeRateLimitValue(parsed.loginId)}:${normalizeRateLimitValue(parsed.email)}`;
+
+      assertRateLimit(response, {
+        scope: "auth-signup-verify-ip",
+        key: clientIp,
+        max: 20,
+        windowMs: 15 * minuteMs,
+        message: "인증 시도가 너무 많습니다. 잠시 후 다시 시도해 주세요.",
+        code: "SIGNUP_VERIFY_RATE_LIMITED"
+      });
+      assertRateLimit(response, {
+        scope: "auth-signup-verify-target",
+        key: `${clientIp}:${signupTargetKey}`,
+        max: 8,
+        windowMs: 15 * minuteMs,
+        message: "인증 시도가 너무 많습니다. 잠시 후 다시 시도해 주세요.",
+        code: "SIGNUP_VERIFY_RATE_LIMITED"
+      });
+
       const session = await verifySignupCode(parsed);
       setSessionCookie(response, session.sessionToken, session.expiresAt);
       response.status(201).json({
@@ -428,6 +590,16 @@ export function createApp() {
       const parsed = sellerEmailRequestSchema.parse(request.body) as Parameters<
         typeof requestSellerEmailVerification
       >[1];
+
+      assertRateLimit(response, {
+        scope: "seller-email-request-user",
+        key: `${getClientIp(request)}:${user.id}`,
+        max: 6,
+        windowMs: 15 * minuteMs,
+        message: "인증번호 요청이 너무 많습니다. 잠시 후 다시 시도해 주세요.",
+        code: "SELLER_EMAIL_REQUEST_RATE_LIMITED"
+      });
+
       await requestSellerEmailVerification(user.id, parsed);
       response.status(201).json({
         ok: true,
@@ -443,6 +615,16 @@ export function createApp() {
       const parsed = sellerEmailVerifySchema.parse(request.body) as Parameters<
         typeof verifySellerEmailVerification
       >[1];
+
+      assertRateLimit(response, {
+        scope: "seller-email-verify-user",
+        key: `${getClientIp(request)}:${user.id}`,
+        max: 10,
+        windowMs: 15 * minuteMs,
+        message: "인증 시도가 너무 많습니다. 잠시 후 다시 시도해 주세요.",
+        code: "SELLER_EMAIL_VERIFY_RATE_LIMITED"
+      });
+
       const verifiedUser = await verifySellerEmailVerification(user.id, parsed);
       response.status(201).json({
         user: verifiedUser,
@@ -458,6 +640,16 @@ export function createApp() {
       const parsed = sellerEmailRequestSchema.parse(request.body) as Parameters<
         typeof requestBuyerEmailVerification
       >[1];
+
+      assertRateLimit(response, {
+        scope: "buyer-email-request-user",
+        key: `${getClientIp(request)}:${user.id}`,
+        max: 6,
+        windowMs: 15 * minuteMs,
+        message: "인증번호 요청이 너무 많습니다. 잠시 후 다시 시도해 주세요.",
+        code: "BUYER_EMAIL_REQUEST_RATE_LIMITED"
+      });
+
       await requestBuyerEmailVerification(user.id, parsed);
       response.status(201).json({
         ok: true,
@@ -473,6 +665,16 @@ export function createApp() {
       const parsed = sellerEmailVerifySchema.parse(request.body) as Parameters<
         typeof verifyBuyerEmailVerification
       >[1];
+
+      assertRateLimit(response, {
+        scope: "buyer-email-verify-user",
+        key: `${getClientIp(request)}:${user.id}`,
+        max: 10,
+        windowMs: 15 * minuteMs,
+        message: "인증 시도가 너무 많습니다. 잠시 후 다시 시도해 주세요.",
+        code: "BUYER_EMAIL_VERIFY_RATE_LIMITED"
+      });
+
       const verifiedUser = await verifyBuyerEmailVerification(user.id, parsed);
       response.status(201).json({
         user: verifiedUser,
@@ -487,6 +689,26 @@ export function createApp() {
       const parsed = buyerAccountActivationSchema.parse(request.body) as Parameters<
         typeof requestBuyerAccountActivation
       >[0];
+      const clientIp = getClientIp(request);
+      const activationTargetKey = `${normalizeRateLimitValue(parsed.loginId)}:${normalizeRateLimitValue(parsed.email)}`;
+
+      assertRateLimit(response, {
+        scope: "buyer-activation-request-ip",
+        key: clientIp,
+        max: 12,
+        windowMs: 15 * minuteMs,
+        message: "인증번호 요청이 너무 많습니다. 잠시 후 다시 시도해 주세요.",
+        code: "BUYER_ACTIVATION_REQUEST_RATE_LIMITED"
+      });
+      assertRateLimit(response, {
+        scope: "buyer-activation-request-target",
+        key: `${clientIp}:${activationTargetKey}`,
+        max: 4,
+        windowMs: 15 * minuteMs,
+        message: "인증번호 요청이 너무 많습니다. 잠시 후 다시 시도해 주세요.",
+        code: "BUYER_ACTIVATION_REQUEST_RATE_LIMITED"
+      });
+
       await requestBuyerAccountActivation(parsed);
       response.status(201).json({
         ok: true,
@@ -501,6 +723,26 @@ export function createApp() {
       const parsed = buyerAccountActivationVerifySchema.parse(request.body) as Parameters<
         typeof verifyBuyerAccountActivation
       >[0];
+      const clientIp = getClientIp(request);
+      const activationTargetKey = `${normalizeRateLimitValue(parsed.loginId)}:${normalizeRateLimitValue(parsed.email)}`;
+
+      assertRateLimit(response, {
+        scope: "buyer-activation-verify-ip",
+        key: clientIp,
+        max: 20,
+        windowMs: 15 * minuteMs,
+        message: "인증 시도가 너무 많습니다. 잠시 후 다시 시도해 주세요.",
+        code: "BUYER_ACTIVATION_VERIFY_RATE_LIMITED"
+      });
+      assertRateLimit(response, {
+        scope: "buyer-activation-verify-target",
+        key: `${clientIp}:${activationTargetKey}`,
+        max: 8,
+        windowMs: 15 * minuteMs,
+        message: "인증 시도가 너무 많습니다. 잠시 후 다시 시도해 주세요.",
+        code: "BUYER_ACTIVATION_VERIFY_RATE_LIMITED"
+      });
+
       const session = await verifyBuyerAccountActivation(parsed);
       setSessionCookie(response, session.sessionToken, session.expiresAt);
       response.status(201).json({
@@ -530,6 +772,26 @@ export function createApp() {
       const parsed = passwordResetRequestSchema.parse(request.body) as Parameters<
         typeof requestPasswordReset
       >[0];
+      const clientIp = getClientIp(request);
+      const resetTargetKey = `${normalizeRateLimitValue(parsed.portal)}:${normalizeRateLimitValue(parsed.loginId)}:${normalizeRateLimitValue(parsed.email)}`;
+
+      assertRateLimit(response, {
+        scope: "password-reset-request-ip",
+        key: clientIp,
+        max: 12,
+        windowMs: 15 * minuteMs,
+        message: "인증번호 요청이 너무 많습니다. 잠시 후 다시 시도해 주세요.",
+        code: "PASSWORD_RESET_REQUEST_RATE_LIMITED"
+      });
+      assertRateLimit(response, {
+        scope: "password-reset-request-target",
+        key: `${clientIp}:${resetTargetKey}`,
+        max: 4,
+        windowMs: 15 * minuteMs,
+        message: "인증번호 요청이 너무 많습니다. 잠시 후 다시 시도해 주세요.",
+        code: "PASSWORD_RESET_REQUEST_RATE_LIMITED"
+      });
+
       await requestPasswordReset(parsed);
       response.status(201).json({
         ok: true,
@@ -544,6 +806,26 @@ export function createApp() {
       const parsed = passwordResetVerifySchema.parse(request.body) as Parameters<
         typeof verifyPasswordReset
       >[0];
+      const clientIp = getClientIp(request);
+      const resetTargetKey = `${normalizeRateLimitValue(parsed.portal)}:${normalizeRateLimitValue(parsed.loginId)}:${normalizeRateLimitValue(parsed.email)}`;
+
+      assertRateLimit(response, {
+        scope: "password-reset-verify-ip",
+        key: clientIp,
+        max: 20,
+        windowMs: 15 * minuteMs,
+        message: "인증 시도가 너무 많습니다. 잠시 후 다시 시도해 주세요.",
+        code: "PASSWORD_RESET_VERIFY_RATE_LIMITED"
+      });
+      assertRateLimit(response, {
+        scope: "password-reset-verify-target",
+        key: `${clientIp}:${resetTargetKey}`,
+        max: 8,
+        windowMs: 15 * minuteMs,
+        message: "인증 시도가 너무 많습니다. 잠시 후 다시 시도해 주세요.",
+        code: "PASSWORD_RESET_VERIFY_RATE_LIMITED"
+      });
+
       const session = await verifyPasswordReset(parsed);
       setSessionCookie(response, session.sessionToken, session.expiresAt);
       response.status(201).json({
@@ -559,6 +841,26 @@ export function createApp() {
       const parsed = legacyAccountActivationSchema.parse(request.body) as Parameters<
         typeof requestLegacyAccountActivation
       >[0];
+      const clientIp = getClientIp(request);
+      const activationTargetKey = `${normalizeRateLimitValue(parsed.loginId)}:${normalizeRateLimitValue(parsed.email)}`;
+
+      assertRateLimit(response, {
+        scope: "legacy-activation-request-ip",
+        key: clientIp,
+        max: 12,
+        windowMs: 15 * minuteMs,
+        message: "인증번호 요청이 너무 많습니다. 잠시 후 다시 시도해 주세요.",
+        code: "LEGACY_ACTIVATION_REQUEST_RATE_LIMITED"
+      });
+      assertRateLimit(response, {
+        scope: "legacy-activation-request-target",
+        key: `${clientIp}:${activationTargetKey}`,
+        max: 4,
+        windowMs: 15 * minuteMs,
+        message: "인증번호 요청이 너무 많습니다. 잠시 후 다시 시도해 주세요.",
+        code: "LEGACY_ACTIVATION_REQUEST_RATE_LIMITED"
+      });
+
       await requestLegacyAccountActivation(parsed);
       response.status(201).json({
         ok: true,
@@ -573,6 +875,26 @@ export function createApp() {
       const parsed = legacyAccountActivationVerifySchema.parse(request.body) as Parameters<
         typeof verifyLegacyAccountActivation
       >[0];
+      const clientIp = getClientIp(request);
+      const activationTargetKey = `${normalizeRateLimitValue(parsed.loginId)}:${normalizeRateLimitValue(parsed.email)}`;
+
+      assertRateLimit(response, {
+        scope: "legacy-activation-verify-ip",
+        key: clientIp,
+        max: 20,
+        windowMs: 15 * minuteMs,
+        message: "인증 시도가 너무 많습니다. 잠시 후 다시 시도해 주세요.",
+        code: "LEGACY_ACTIVATION_VERIFY_RATE_LIMITED"
+      });
+      assertRateLimit(response, {
+        scope: "legacy-activation-verify-target",
+        key: `${clientIp}:${activationTargetKey}`,
+        max: 8,
+        windowMs: 15 * minuteMs,
+        message: "인증 시도가 너무 많습니다. 잠시 후 다시 시도해 주세요.",
+        code: "LEGACY_ACTIVATION_VERIFY_RATE_LIMITED"
+      });
+
       const session = await verifyLegacyAccountActivation(parsed);
       setSessionCookie(response, session.sessionToken, session.expiresAt);
       response.status(201).json({
@@ -635,19 +957,47 @@ export function createApp() {
     asyncHandler(async (request, response) => {
       const user = requireSellerPortalVerified(request);
 
-      if (!isApprovalAdmin(user)) {
-        response.json({ eligible: false, verified: false });
-        return;
-      }
-
-      response.json({
-        eligible: true,
-        verified: hasSellerApprovalAuthCookie({
+      response.json(
+        await getSellerApprovalAdminAuthStatus({
+          user,
           sessionToken: request.cookies?.[env.SESSION_COOKIE_NAME],
-          userId: user.id,
           cookieValue: request.cookies?.[sellerApprovalAuthCookieName]
         })
-      });
+      );
+    })
+  );
+
+  app.post(
+    "/admin/seller-access/auth/setup",
+    asyncHandler(async (request, _response) => {
+      const user = requireSellerPortalVerified(request);
+
+      if (!isApprovalAdmin(user)) {
+        throw new AppError("관리자 계정만 판매자 승인 목록을 관리할 수 있습니다.", 403);
+      }
+
+      throw new AppError(
+        "판매자 승인용 Google OTP는 운영자가 미리 고정 등록해야 합니다.",
+        403,
+        "SELLER_APPROVAL_TOTP_SELF_SERVICE_DISABLED"
+      );
+    })
+  );
+
+  app.post(
+    "/admin/seller-access/auth/setup/verify",
+    asyncHandler(async (request, _response) => {
+      const user = requireSellerPortalVerified(request);
+
+      if (!isApprovalAdmin(user)) {
+        throw new AppError("관리자 계정만 판매자 승인 목록을 관리할 수 있습니다.", 403);
+      }
+
+      throw new AppError(
+        "판매자 승인용 Google OTP는 운영자가 미리 고정 등록해야 합니다.",
+        403,
+        "SELLER_APPROVAL_TOTP_SELF_SERVICE_DISABLED"
+      );
     })
   );
 
@@ -666,17 +1016,32 @@ export function createApp() {
         throw new AppError("로그인이 필요합니다.", 401);
       }
 
-      const { password } = sellerApprovalPasswordSchema.parse(request.body);
-      verifySellerApprovalAdminPassword(password);
-      setSellerApprovalAuthCookie(response, sessionToken, user.id);
-      response.json({ ok: true });
+      const { code } = sellerApprovalTotpCodeSchema.parse(request.body);
+
+      assertRateLimit(response, {
+        scope: "seller-approval-otp-user",
+        key: `${getClientIp(request)}:${user.id}`,
+        max: 6,
+        windowMs: 10 * minuteMs,
+        message: "OTP 확인 시도가 너무 많습니다. 잠시 후 다시 시도해 주세요.",
+        code: "SELLER_APPROVAL_TOTP_RATE_LIMITED"
+      });
+
+      const credential = await verifySellerApprovalTotp(user.id, code);
+      setSellerApprovalAuthCookie(
+        response,
+        sessionToken,
+        user.id,
+        credential.updated_at.toISOString()
+      );
+      response.json({ ok: true, message: "Google OTP 확인이 완료되었습니다." });
     })
   );
 
   app.get(
     "/admin/seller-access",
     asyncHandler(async (request, response) => {
-      requireApprovalAdmin(request);
+      await requireApprovalAdmin(request);
       response.json({ items: await listPendingSellerAccessRequests() });
     })
   );
@@ -684,7 +1049,7 @@ export function createApp() {
   app.post(
     "/admin/seller-access/:requestId/approve",
     asyncHandler(async (request, response) => {
-      const adminUser = requireApprovalAdmin(request);
+      const adminUser = await requireApprovalAdmin(request);
       const requestId = getRequiredString(request.params.requestId, "requestId");
       const item = await approveSellerAccessRequest(requestId, adminUser.id);
       response.json({

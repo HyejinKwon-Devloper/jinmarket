@@ -7,6 +7,8 @@ import type {
 
 const defaultApiBaseUrl = "/api";
 const buyerProfileUpdatedEventName = "jinmarket:buyer-profile-updated";
+const csrfHeaderName = "x-jinmarket-csrf";
+const csrfHeaderValue = "1";
 
 export const apiBaseUrl = defaultApiBaseUrl;
 
@@ -20,11 +22,15 @@ export class ApiError extends Error {
 }
 
 export async function requestJson<T>(path: string, init?: RequestInit): Promise<T> {
+  const method = (init?.method ?? "GET").toUpperCase();
+  const includeCsrfHeader = !["GET", "HEAD", "OPTIONS"].includes(method);
+
   const response = await fetch(`${apiBaseUrl}${path}`, {
     ...init,
     credentials: "include",
     headers: {
       "Content-Type": "application/json",
+      ...(includeCsrfHeader ? { [csrfHeaderName]: csrfHeaderValue } : {}),
       ...(init?.headers ?? {}),
     },
   });

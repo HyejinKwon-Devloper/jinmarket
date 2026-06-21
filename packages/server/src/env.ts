@@ -122,7 +122,10 @@ const envSchema = z.object({
   BUYER_ACCOUNT_ACTIVATION_TOKEN: z.string().default(""),
   LEGACY_ACCOUNT_ACTIVATION_TOKEN: z.string().default(""),
   SELLER_APPROVAL_ADMIN_LOGIN_ID: z.string().default(""),
-  SELLER_APPROVAL_ADMIN_PASSWORD: z.string().default(""),
+  SELLER_APPROVAL_ADMIN_LOGIN_IDS: z.string().default(""),
+  SELLER_APPROVAL_AUTH_TTL_MINUTES: z.coerce.number().int().min(5).max(120).default(15),
+  SELLER_APPROVAL_TOTP_ISSUER: z.string().trim().min(1).default("Jinmarket Admin"),
+  SELLER_APPROVAL_TOTP_ENCRYPTION_SECRET: z.string().default(""),
   SIGNUP_VERIFICATION_CODE_TTL_MINUTES: z.coerce.number().int().min(1).max(60).default(10),
   SMTP_HOST: z.string().default(""),
   SMTP_PORT: z.coerce.number().int().min(1).max(65535).default(587),
@@ -143,7 +146,35 @@ const envSchema = z.object({
 
 export const env = envSchema.parse(process.env);
 
-export const sellerApprovalAdminLoginId = env.SELLER_APPROVAL_ADMIN_LOGIN_ID.trim().toLowerCase();
+function normalizeLoginIdCandidate(value?: string | null) {
+  if (!value) {
+    return "";
+  }
+
+  return value.trim().replace(/^@+/, "").toLowerCase();
+}
+
+export const sellerApprovalAdminLoginIds = new Set(
+  [env.SELLER_APPROVAL_ADMIN_LOGIN_IDS, env.SELLER_APPROVAL_ADMIN_LOGIN_ID]
+    .flatMap((value) => value.split(","))
+    .map((value) => normalizeLoginIdCandidate(value))
+    .filter(Boolean)
+);
+
+if (process.env.NODE_ENV === "production" && env.SESSION_SECRET.trim() === "change-me") {
+  throw new Error("SESSION_SECRET must be set to a strong random value in production.");
+}
+
+if (sellerApprovalAdminLoginIds.size > 0 && !env.SELLER_APPROVAL_TOTP_ENCRYPTION_SECRET.trim()) {
+  throw new Error(
+    "SELLER_APPROVAL_TOTP_ENCRYPTION_SECRET must be set when seller approval OTP admins are configured."
+  );
+}
+
+export function isSellerApprovalAdminLoginId(loginId?: string | null) {
+  const normalized = normalizeLoginIdCandidate(loginId);
+  return Boolean(normalized && sellerApprovalAdminLoginIds.has(normalized));
+}
 
 export const allowedOrigins = Array.from(
   new Set(

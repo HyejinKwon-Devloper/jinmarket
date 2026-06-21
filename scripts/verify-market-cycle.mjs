@@ -2,6 +2,8 @@ process.env.NODE_TLS_REJECT_UNAUTHORIZED = "0";
 
 const apiBaseUrl = "https://localhost:4000";
 const runId = `cycle-${Date.now()}`;
+const csrfHeaderName = "x-jinmarket-csrf";
+const csrfHeaderValue = "1";
 
 class ApiSession {
   constructor(name) {
@@ -33,8 +35,14 @@ class ApiSession {
 
   async request(path, init = {}) {
     const headers = new Headers(init.headers ?? {});
+    const method = (init.method ?? "GET").toUpperCase();
+
     if (init.body && !headers.has("content-type")) {
       headers.set("content-type", "application/json");
+    }
+
+    if (!["GET", "HEAD", "OPTIONS"].includes(method)) {
+      headers.set(csrfHeaderName, csrfHeaderValue);
     }
 
     this.applyCookies(headers);

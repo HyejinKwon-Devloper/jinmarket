@@ -1,14 +1,14 @@
 "use client";
 
+import type { FormEvent } from "react";
 import { useEffect, useState } from "react";
-import type { SellerAccessRequestRecord, SessionUser } from "@jinmarket/shared";
+import type {
+  SellerAccessRequestRecord,
+  SellerApprovalAdminAuthStatus,
+  SessionUser
+} from "@jinmarket/shared";
 
-import { fetchCurrentUser, isApprovalAdmin, requestJson } from "../lib/api";
-
-type AdminApprovalAuthStatus = {
-  eligible: boolean;
-  verified: boolean;
-};
+import { ApiError, fetchCurrentUser, isApprovalAdmin, requestJson } from "../lib/api";
 
 function applicantLabel(item: SellerAccessRequestRecord) {
   if (
@@ -24,12 +24,13 @@ function applicantLabel(item: SellerAccessRequestRecord) {
 
 export function ManagedSellerApprovalPageContent() {
   const [currentUser, setCurrentUser] = useState<SessionUser | null | undefined>(undefined);
+  const [authStatus, setAuthStatus] = useState<SellerApprovalAdminAuthStatus | null>(null);
   const [items, setItems] = useState<SellerAccessRequestRecord[]>([]);
   const [message, setMessage] = useState<string | null>(null);
   const [approvingId, setApprovingId] = useState<string | null>(null);
-  const [adminPassword, setAdminPassword] = useState("");
-  const [requiresAdminPassword, setRequiresAdminPassword] = useState(false);
-  const [isVerifyingPassword, setIsVerifyingPassword] = useState(false);
+  const [otpCode, setOtpCode] = useState("");
+  const [requiresAdminOtp, setRequiresAdminOtp] = useState(false);
+  const [isSubmittingOtp, setIsSubmittingOtp] = useState(false);
 
   async function loadRequests() {
     const response = await requestJson<{ items: SellerAccessRequestRecord[] }>("/admin/seller-access");
@@ -37,7 +38,7 @@ export function ManagedSellerApprovalPageContent() {
   }
 
   async function fetchApprovalAuthStatus() {
-    return requestJson<AdminApprovalAuthStatus>("/admin/seller-access/auth");
+    return requestJson<SellerApprovalAdminAuthStatus>("/admin/seller-access/auth");
   }
 
   useEffect(() => {
@@ -63,27 +64,38 @@ export function ManagedSellerApprovalPageContent() {
           return;
         }
 
-        const authStatus = await fetchApprovalAuthStatus();
+        const nextAuthStatus = await fetchApprovalAuthStatus();
 
         if (cancelled) {
           return;
         }
 
-        if (!authStatus.eligible) {
+        setAuthStatus(nextAuthStatus);
+
+        if (!nextAuthStatus.eligible) {
           setMessage("관리자 계정만 판매자 승인 목록을 관리할 수 있습니다.");
           return;
         }
 
-        if (!authStatus.verified) {
-          setRequiresAdminPassword(true);
-          setMessage("판매자 승인 목록에 들어가려면 관리자 비밀번호를 확인해 주세요.");
+        if (!nextAuthStatus.verified) {
+          setRequiresAdminOtp(true);
+
+          if (!nextAuthStatus.totpEnabled) {
+            if (!cancelled) {
+              setMessage("판매자 승인용 Google OTP가 아직 고정 등록되지 않았습니다. 운영자 등록 후 다시 시도해 주세요.");
+            }
+
+            return;
+          }
+
+          setMessage("판매자 승인 목록에 들어가려면 Google OTP 6자리 코드를 입력해 주세요.");
           return;
         }
 
         await loadRequests();
 
         if (!cancelled) {
-          setRequiresAdminPassword(false);
+          setRequiresAdminOtp(false);
           setMessage(null);
         }
       } catch (error) {
@@ -100,6 +112,34 @@ export function ManagedSellerApprovalPageContent() {
     };
   }, []);
 
+  async function handleOtpSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+
+    if (isSubmittingOtp || !authStatus?.totpEnabled) {
+      return;
+    }
+
+    try {
+      setIsSubmittingOtp(true);
+      setMessage(null);
+      const response = await requestJson<{ ok: true; message?: string }>("/admin/seller-access/auth", {
+        method: "POST",
+        body: JSON.stringify({ code: otpCode })
+      });
+      await loadRequests();
+      setAuthStatus({ eligible: true, verified: true, totpEnabled: true });
+      setRequiresAdminOtp(false);
+      setOtpCode("");
+      setMessage(response.message ?? null);
+    } catch (error) {
+      setMessage(
+        error instanceof Error ? error.message : "Google OTP 확인에 실패했습니다."
+      );
+    } finally {
+      setIsSubmittingOtp(false);
+    }
+  }
+
   if (currentUser === undefined) {
     return <section className="panel">권한을 확인하는 중입니다...</section>;
   }
@@ -108,57 +148,42 @@ export function ManagedSellerApprovalPageContent() {
     return <section className="panel">{message ?? "접근 권한이 없습니다."}</section>;
   }
 
-  if (requiresAdminPassword) {
+  if (requiresAdminOtp) {
     return (
       <section className="panel">
         <p className="eyebrow">Seller Approval</p>
-        <h1>관리자 비밀번호 확인</h1>
+        <h1>Google OTP 확인</h1>
         <p className="muted">
-          판매자 승인 목록은 관리자 로그인만으로 바로 열리지 않습니다. 관리자 비밀번호를 한 번 더
-          확인해 주세요.
+          판매자 승인 목록은 관리자 로그인만으로 바로 열리지 않습니다. Google Authenticator 같은 OTP
+          앱으로 관리자 2차 인증을 완료해 주세요.
         </p>
-        <form
-          onSubmit={async (event) => {
-            event.preventDefault();
 
-            if (isVerifyingPassword) {
-              return;
-            }
-
-            try {
-              setIsVerifyingPassword(true);
-              setMessage(null);
-              await requestJson("/admin/seller-access/auth", {
-                method: "POST",
-                body: JSON.stringify({ password: adminPassword })
-              });
-              await loadRequests();
-              setRequiresAdminPassword(false);
-              setAdminPassword("");
-              setMessage(null);
-            } catch (error) {
-              setMessage(error instanceof Error ? error.message : "관리자 비밀번호 확인에 실패했습니다.");
-            } finally {
-              setIsVerifyingPassword(false);
-            }
-          }}
-        >
-          <div className="field" style={{ marginTop: 18 }}>
-            <label>관리자 비밀번호</label>
-            <input
-              className="input"
-              type="password"
-              autoComplete="current-password"
-              value={adminPassword}
-              onChange={(event) => setAdminPassword(event.target.value)}
-            />
-          </div>
-          <div className="actionRow" style={{ marginTop: 18 }}>
-            <button className="primaryButton" disabled={isVerifyingPassword} type="submit">
-              {isVerifyingPassword ? "확인 중..." : "비밀번호 확인"}
-            </button>
-          </div>
-        </form>
+        {authStatus?.totpEnabled ? (
+          <form onSubmit={(event) => void handleOtpSubmit(event)}>
+            <div className="field" style={{ marginTop: 18 }}>
+              <label>현재 Google OTP 6자리 코드</label>
+              <input
+                className="input"
+                inputMode="numeric"
+                autoComplete="one-time-code"
+                maxLength={6}
+                pattern="\d{6}"
+                value={otpCode}
+                onChange={(event) => setOtpCode(event.target.value.replace(/\D+/g, "").slice(0, 6))}
+              />
+            </div>
+            <div className="actionRow" style={{ marginTop: 18 }}>
+              <button className="primaryButton" disabled={isSubmittingOtp} type="submit">
+                {isSubmittingOtp ? "확인 중..." : "Google OTP 확인"}
+              </button>
+            </div>
+          </form>
+        ) : (
+          <p className="muted" style={{ marginTop: 18 }}>
+            이 계정의 판매자 승인 OTP는 웹에서 새로 등록할 수 없습니다. 운영자가 미리 고정 등록한 뒤
+            다시 시도해 주세요.
+          </p>
+        )}
         {message ? <div className="message">{message}</div> : null}
       </section>
     );
@@ -211,8 +236,14 @@ export function ManagedSellerApprovalPageContent() {
                       const nextMessage =
                         error instanceof Error ? error.message : "판매자 승인에 실패했습니다.";
 
-                      if (nextMessage.includes("비밀번호 확인이 필요")) {
-                        setRequiresAdminPassword(true);
+                      if (
+                        error instanceof ApiError &&
+                        (error.code === "SELLER_APPROVAL_TOTP_REQUIRED" ||
+                          error.code === "SELLER_APPROVAL_TOTP_SETUP_REQUIRED")
+                      ) {
+                        const nextAuthStatus = await fetchApprovalAuthStatus().catch(() => null);
+                        setAuthStatus(nextAuthStatus);
+                        setRequiresAdminOtp(true);
                         setItems([]);
                       }
 

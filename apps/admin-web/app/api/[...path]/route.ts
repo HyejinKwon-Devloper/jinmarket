@@ -3,13 +3,14 @@ import { request as httpsRequest } from "node:https";
 
 import type { NextRequest } from "next/server";
 
-const apiProxyTarget = (
-  process.env.API_PROXY_TARGET ??
-  process.env.NEXT_PUBLIC_API_BASE_URL ??
-  (process.env.NODE_ENV === "production"
-    ? "https://server-six-sepia-69.vercel.app"
-    : "https://jinmarket.test:4000")
-).replace(/\/+$/, "");
+const configuredApiProxyTarget =
+  process.env.API_PROXY_TARGET?.trim() || process.env.NEXT_PUBLIC_API_BASE_URL?.trim() || "";
+
+if (process.env.NODE_ENV === "production" && !configuredApiProxyTarget) {
+  throw new Error("API_PROXY_TARGET or NEXT_PUBLIC_API_BASE_URL must be set in production.");
+}
+
+const apiProxyTarget = (configuredApiProxyTarget || "https://jinmarket.test:4000").replace(/\/+$/, "");
 
 const allowInsecureLocalTls =
   process.env.NODE_ENV !== "production" &&

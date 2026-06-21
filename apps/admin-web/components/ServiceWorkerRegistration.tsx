@@ -4,11 +4,16 @@ import { useEffect } from "react";
 
 export function ServiceWorkerRegistration() {
   useEffect(() => {
-    if (process.env.NODE_ENV !== "production") {
+    if (!("serviceWorker" in navigator)) {
       return;
     }
 
-    if (!("serviceWorker" in navigator)) {
+    const isLocalhost =
+      window.location.hostname === "localhost" ||
+      window.location.hostname === "127.0.0.1" ||
+      window.location.hostname === "jinmarket.test";
+
+    if (!window.isSecureContext && !isLocalhost) {
       return;
     }
 

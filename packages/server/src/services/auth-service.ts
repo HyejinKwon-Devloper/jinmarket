@@ -1,14 +1,31 @@
 import type { Response } from "express";
-import { createHash, randomInt, timingSafeEqual } from "node:crypto";
+import {
+  createCipheriv,
+  createDecipheriv,
+  createHash,
+  randomBytes,
+  randomInt,
+  timingSafeEqual
+} from "node:crypto";
 import { z } from "zod";
 
-import { query, withTransaction, type DbClient } from "@jinmarket/db";
-import type { SessionUser } from "../../../shared/src/index.js";
+import { query, runWithDbContext, withTransaction, type DbClient } from "@jinmarket/db";
+import {
+  sanitizeProfileImageUrl,
+  type SellerApprovalAdminAuthStatus,
+  type SellerApprovalTotpSetup,
+  type SessionUser
+} from "../../../shared/src/index.js";
 
 import { AppError, isPgUniqueError } from "../errors.js";
-import { env, sellerApprovalAdminLoginId } from "../env.js";
-import { addDays, generateSessionToken, hashSessionToken } from "../utils/auth.js";
+import { env, isSellerApprovalAdminLoginId } from "../env.js";
+import { addDays, addMinutes, generateSessionToken, hashSessionToken } from "../utils/auth.js";
 import { hashPassword, hashVerificationCode, verifyPassword } from "../utils/password.js";
+import {
+  buildTotpOtpauthUrl,
+  generateTotpSecret,
+  verifyTotpToken
+} from "../utils/totp.js";
 
 import { accountIdentityJoins, accountLoginIdSql } from "./account-sql.js";
 import {
@@ -96,7 +113,24 @@ type LegacyActivationTargetRow = {
   has_local_password: boolean;
 };
 
+type SellerApprovalTotpCredentialRow = {
+  user_id: string;
+  secret_encrypted: string;
+  secret_iv: string;
+  secret_auth_tag: string;
+  enabled_at: Date | null;
+  pending_expires_at: Date | null;
+  last_verified_at: Date | null;
+  last_used_time_step: number | null;
+  updated_at: Date;
+};
+
 type PasswordResetPortal = "SHOP" | "ADMIN";
+
+const sellerApprovalTotpDigits = 6;
+const sellerApprovalTotpPeriodSeconds = 30;
+const sellerApprovalTotpPendingTtlMinutes = 10;
+const sellerApprovalTotpWindow = 1;
 
 function normalizeRoleList(value: string[] | string | null | undefined) {
   if (Array.isArray(value)) {
@@ -126,7 +160,7 @@ function mapSessionUser(row: SessionUserRow): SessionUser {
     id: row.id,
     displayName: row.display_name,
     email: row.email,
-    profileImageUrl: row.profile_image_url,
+    profileImageUrl: sanitizeProfileImageUrl(row.profile_image_url),
     sellerEmailVerifiedAt: row.seller_email_verified_at ? row.seller_email_verified_at.toISOString() : null,
     threadsUsername: row.login_id,
     roles: normalizeRoleList(row.roles)
@@ -179,11 +213,9 @@ function normalizeProfileImageUrl(rawProfileImageUrl: string | null) {
     throw new AppError("프로필 사진 주소가 올바르지 않습니다.", 400, "INVALID_PROFILE_IMAGE_URL");
   }
 
-  const isCloudinaryHost =
-    parsed.hostname === "res.cloudinary.com" ||
-    parsed.hostname.endsWith(".res.cloudinary.com");
+  const sanitized = sanitizeProfileImageUrl(parsed.toString());
 
-  if (parsed.protocol !== "https:" || !isCloudinaryHost) {
+  if (!sanitized) {
     throw new AppError(
       "프로필 사진은 등록된 Cloudinary 이미지여야 합니다.",
       400,
@@ -191,7 +223,7 @@ function normalizeProfileImageUrl(rawProfileImageUrl: string | null) {
     );
   }
 
-  return parsed.toString();
+  return sanitized;
 }
 
 function normalizeVerificationCode(rawCode: string) {
@@ -220,7 +252,7 @@ function cookieOptions(expires?: Date) {
 
   return {
     httpOnly: true,
-    sameSite: secure ? ("none" as const) : ("lax" as const),
+    sameSite: "lax" as const,
     secure,
     path: "/",
     ...(expires ? { expires } : {})
@@ -236,6 +268,106 @@ function compareSecret(left: string, right: string) {
   }
 
   return timingSafeEqual(leftBuffer, rightBuffer);
+}
+
+function normalizeSellerApprovalOtpCode(rawCode: string) {
+  const normalized = rawCode.trim().replace(/\s+/g, "");
+
+  if (!/^\d{6}$/.test(normalized)) {
+    throw new AppError(
+      "Google OTP 6자리 코드를 입력해 주세요.",
+      400,
+      "INVALID_SELLER_APPROVAL_OTP"
+    );
+  }
+
+  return normalized;
+}
+
+function getSellerApprovalTotpEncryptionKey() {
+  const source = env.SELLER_APPROVAL_TOTP_ENCRYPTION_SECRET.trim();
+
+  if (!source) {
+    throw new Error("SELLER_APPROVAL_TOTP_ENCRYPTION_SECRET is required for seller approval OTP.");
+  }
+
+  return createHash("sha256")
+    .update(`seller-approval-totp:${source}`)
+    .digest();
+}
+
+function encryptSellerApprovalTotpSecret(secret: string) {
+  const iv = randomBytes(12);
+  const cipher = createCipheriv("aes-256-gcm", getSellerApprovalTotpEncryptionKey(), iv);
+  const encrypted = Buffer.concat([cipher.update(secret, "utf8"), cipher.final()]);
+  const authTag = cipher.getAuthTag();
+
+  return {
+    secretEncrypted: encrypted.toString("base64"),
+    secretIv: iv.toString("hex"),
+    secretAuthTag: authTag.toString("hex")
+  };
+}
+
+function decryptSellerApprovalTotpSecret(row: Pick<
+  SellerApprovalTotpCredentialRow,
+  "secret_encrypted" | "secret_iv" | "secret_auth_tag"
+>) {
+  const decipher = createDecipheriv(
+    "aes-256-gcm",
+    getSellerApprovalTotpEncryptionKey(),
+    Buffer.from(row.secret_iv, "hex")
+  );
+  decipher.setAuthTag(Buffer.from(row.secret_auth_tag, "hex"));
+
+  return Buffer.concat([
+    decipher.update(Buffer.from(row.secret_encrypted, "base64")),
+    decipher.final()
+  ]).toString("utf8");
+}
+
+function getSellerApprovalTotpAccountName(user: SessionUser) {
+  return user.threadsUsername?.trim() || user.email?.trim() || user.displayName.trim();
+}
+
+function getSellerApprovalTotpAccountNameFromValues(input: {
+  loginId?: string | null;
+  email?: string | null;
+  displayName: string;
+}) {
+  return input.loginId?.trim() || input.email?.trim() || input.displayName.trim();
+}
+
+function buildSellerApprovalTotpSetup(
+  user: SessionUser,
+  row: Pick<SellerApprovalTotpCredentialRow, "pending_expires_at"> &
+    Pick<SellerApprovalTotpCredentialRow, "secret_encrypted" | "secret_iv" | "secret_auth_tag">
+): SellerApprovalTotpSetup {
+  if (!row.pending_expires_at) {
+    throw new AppError("Google OTP 설정 정보를 찾지 못했습니다.", 404, "SELLER_APPROVAL_TOTP_SETUP_NOT_FOUND");
+  }
+
+  const issuer = env.SELLER_APPROVAL_TOTP_ISSUER.trim();
+  const accountName = getSellerApprovalTotpAccountName(user);
+  const manualEntryKey = decryptSellerApprovalTotpSecret(row);
+
+  return {
+    issuer,
+    accountName,
+    manualEntryKey,
+    otpauthUrl: buildTotpOtpauthUrl({
+      issuer,
+      accountName,
+      secret: manualEntryKey,
+      digits: sellerApprovalTotpDigits,
+      periodSeconds: sellerApprovalTotpPeriodSeconds
+    }),
+    expiresAt: row.pending_expires_at.toISOString()
+  };
+}
+
+function getSellerApprovalAuthVersion(row: Pick<SellerApprovalTotpCredentialRow, "updated_at">) {
+  return row.updated_at.toISOString();
 }
 
 function verifyLegacyAccountActivationToken(token?: string) {
@@ -262,9 +394,9 @@ function verifyBuyerAccountActivationToken(token?: string) {
   }
 }
 
-function getSellerApprovalCookieValue(sessionToken: string, userId: string) {
+function getSellerApprovalCookieValue(sessionToken: string, userId: string, authVersion: string) {
   return createHash("sha256")
-    .update(`${sessionToken}:${userId}:${env.SELLER_APPROVAL_ADMIN_PASSWORD}:${env.SESSION_SECRET}`)
+    .update(`${sessionToken}:${userId}:${authVersion}:${env.SESSION_SECRET}`)
     .digest("hex");
 }
 
@@ -286,6 +418,10 @@ async function getUserBySessionHash(sessionHash: string) {
       WHERE us.session_token_hash = $1
         AND us.revoked_at IS NULL
         AND us.expires_at > NOW()
+        AND (
+          session_user_local.user_id IS NULL
+          OR us.created_at >= session_user_local.password_updated_at
+        )
       GROUP BY u.id, ${accountLoginIdSql("session_user")}
     `,
     [sessionHash]
@@ -321,6 +457,397 @@ async function loadSessionUserById(client: DbClient, userId: string) {
   }
 
   return mapSessionUser(row);
+}
+
+async function loadSellerApprovalTotpCredential(userId: string) {
+  const result = await query<SellerApprovalTotpCredentialRow>(
+    `
+      SELECT
+        user_id,
+        secret_encrypted,
+        secret_iv,
+        secret_auth_tag,
+        enabled_at,
+        pending_expires_at,
+        last_verified_at,
+        last_used_time_step,
+        updated_at
+      FROM seller_approval_admin_totp_credentials
+      WHERE user_id = $1
+    `,
+    [userId]
+  );
+
+  return result.rows[0] ?? null;
+}
+
+async function loadSellerApprovalTotpCredentialForUpdate(client: DbClient, userId: string) {
+  const result = await client.query<SellerApprovalTotpCredentialRow>(
+    `
+      SELECT
+        user_id,
+        secret_encrypted,
+        secret_iv,
+        secret_auth_tag,
+        enabled_at,
+        pending_expires_at,
+        last_verified_at,
+        last_used_time_step,
+        updated_at
+      FROM seller_approval_admin_totp_credentials
+      WHERE user_id = $1
+      FOR UPDATE
+    `,
+    [userId]
+  );
+
+  return result.rows[0] ?? null;
+}
+
+export async function getSellerApprovalAdminAuthStatus(input: {
+  user: SessionUser;
+  sessionToken?: string;
+  cookieValue?: string;
+}): Promise<SellerApprovalAdminAuthStatus> {
+  if (!input.user.roles.includes("ADMIN") || !isSellerApprovalAdminLoginId(input.user.threadsUsername)) {
+    return {
+      eligible: false,
+      verified: false,
+      totpEnabled: false
+    };
+  }
+
+  const credential = await loadSellerApprovalTotpCredential(input.user.id);
+  const totpEnabled = Boolean(credential?.enabled_at);
+
+  return {
+    eligible: true,
+    verified:
+      totpEnabled &&
+      hasSellerApprovalAuthCookie({
+        sessionToken: input.sessionToken,
+        userId: input.user.id,
+        cookieValue: input.cookieValue,
+        authVersion: credential ? getSellerApprovalAuthVersion(credential) : undefined
+      }),
+    totpEnabled
+  };
+}
+
+export async function provisionSellerApprovalTotpForLoginId(loginIdInput: string) {
+  const loginId = normalizeLoginId(loginIdInput);
+
+  if (!isSellerApprovalAdminLoginId(loginId)) {
+    throw new AppError(
+      "허용된 판매자 승인 관리자 로그인 아이디만 OTP를 고정 등록할 수 있습니다.",
+      403,
+      "SELLER_APPROVAL_ADMIN_NOT_ALLOWED"
+    );
+  }
+
+  const targetResult = await query<{
+    user_id: string;
+    display_name: string;
+    email: string | null;
+    login_id: string | null;
+  }>(
+    `
+      SELECT
+        u.id AS user_id,
+        u.display_name,
+        u.email,
+        ${accountLoginIdSql("account")} AS login_id
+      FROM users u
+      ${accountIdentityJoins("account", "u")}
+      WHERE LOWER(COALESCE(${accountLoginIdSql("account")}, '')) = LOWER($1)
+      GROUP BY u.id, ${accountLoginIdSql("account")}
+      LIMIT 1
+    `,
+    [loginId]
+  );
+
+  const target = targetResult.rows[0];
+
+  if (!target?.login_id) {
+    throw new AppError(
+      "해당 로그인 아이디 계정을 찾지 못했습니다. 먼저 계정이 생성되어 있는지 확인해 주세요.",
+      404,
+      "SELLER_APPROVAL_ADMIN_NOT_FOUND"
+    );
+  }
+
+  const secret = generateTotpSecret();
+  const encryptedSecret = encryptSellerApprovalTotpSecret(secret);
+  const issuer = env.SELLER_APPROVAL_TOTP_ISSUER.trim();
+  const accountName = getSellerApprovalTotpAccountNameFromValues({
+    loginId: target.login_id,
+    email: target.email,
+    displayName: target.display_name
+  });
+
+  await runWithDbContext(
+    {
+      userId: target.user_id,
+      roles: ["ADMIN"]
+    },
+    async () =>
+      withTransaction(async (client) => {
+        await assignBaseRoles(client, target.user_id, target.login_id as string, target.display_name);
+        await client.query(
+          `
+            INSERT INTO seller_approval_admin_totp_credentials (
+              user_id,
+              secret_encrypted,
+              secret_iv,
+              secret_auth_tag,
+              enabled_at,
+              pending_expires_at,
+              last_verified_at,
+              last_used_time_step,
+              updated_at
+            )
+            VALUES ($1, $2, $3, $4, NOW(), NULL, NULL, NULL, NOW())
+            ON CONFLICT (user_id) DO UPDATE
+            SET secret_encrypted = EXCLUDED.secret_encrypted,
+                secret_iv = EXCLUDED.secret_iv,
+                secret_auth_tag = EXCLUDED.secret_auth_tag,
+                enabled_at = NOW(),
+                pending_expires_at = NULL,
+                last_verified_at = NULL,
+                last_used_time_step = NULL,
+                updated_at = NOW()
+          `,
+          [
+            target.user_id,
+            encryptedSecret.secretEncrypted,
+            encryptedSecret.secretIv,
+            encryptedSecret.secretAuthTag
+          ]
+        );
+      })
+  );
+
+  return {
+    loginId: target.login_id,
+    issuer,
+    accountName,
+    manualEntryKey: secret,
+    otpauthUrl: buildTotpOtpauthUrl({
+      issuer,
+      accountName,
+      secret,
+      digits: sellerApprovalTotpDigits,
+      periodSeconds: sellerApprovalTotpPeriodSeconds
+    })
+  };
+}
+
+export async function prepareSellerApprovalTotpSetup(
+  user: SessionUser,
+  options?: { regenerate?: boolean }
+): Promise<SellerApprovalTotpSetup> {
+  return withTransaction(async (client) => {
+    const existing = await loadSellerApprovalTotpCredentialForUpdate(client, user.id);
+
+    if (existing?.enabled_at) {
+      throw new AppError(
+        "판매자 승인용 Google OTP가 이미 설정되어 있습니다.",
+        409,
+        "SELLER_APPROVAL_TOTP_ALREADY_ENABLED"
+      );
+    }
+
+    if (
+      !options?.regenerate &&
+      existing?.pending_expires_at &&
+      existing.pending_expires_at.getTime() > Date.now()
+    ) {
+      return buildSellerApprovalTotpSetup(user, existing);
+    }
+
+    const secret = generateTotpSecret();
+    const encryptedSecret = encryptSellerApprovalTotpSecret(secret);
+    const expiresAt = addMinutes(sellerApprovalTotpPendingTtlMinutes);
+    const result = await client.query<SellerApprovalTotpCredentialRow>(
+      `
+        INSERT INTO seller_approval_admin_totp_credentials (
+          user_id,
+          secret_encrypted,
+          secret_iv,
+          secret_auth_tag,
+          enabled_at,
+          pending_expires_at,
+          last_verified_at,
+          last_used_time_step,
+          updated_at
+        )
+        VALUES ($1, $2, $3, $4, NULL, $5, NULL, NULL, NOW())
+        ON CONFLICT (user_id) DO UPDATE
+        SET secret_encrypted = EXCLUDED.secret_encrypted,
+            secret_iv = EXCLUDED.secret_iv,
+            secret_auth_tag = EXCLUDED.secret_auth_tag,
+            enabled_at = NULL,
+            pending_expires_at = EXCLUDED.pending_expires_at,
+            last_verified_at = NULL,
+            last_used_time_step = NULL,
+            updated_at = NOW()
+        RETURNING
+          user_id,
+          secret_encrypted,
+          secret_iv,
+          secret_auth_tag,
+          enabled_at,
+          pending_expires_at,
+          last_verified_at,
+          last_used_time_step,
+          updated_at
+      `,
+      [
+        user.id,
+        encryptedSecret.secretEncrypted,
+        encryptedSecret.secretIv,
+        encryptedSecret.secretAuthTag,
+        expiresAt
+      ]
+    );
+
+    return buildSellerApprovalTotpSetup(user, result.rows[0]);
+  });
+}
+
+export async function verifySellerApprovalTotpSetup(userId: string, code: string) {
+  const normalizedCode = normalizeSellerApprovalOtpCode(code);
+
+  return withTransaction(async (client) => {
+    const credential = await loadSellerApprovalTotpCredentialForUpdate(client, userId);
+
+    if (!credential || credential.enabled_at || !credential.pending_expires_at) {
+      throw new AppError(
+        "Google OTP 설정 정보를 찾지 못했습니다. 설정 키를 다시 발급해 주세요.",
+        404,
+        "SELLER_APPROVAL_TOTP_SETUP_NOT_FOUND"
+      );
+    }
+
+    if (credential.pending_expires_at.getTime() < Date.now()) {
+      await client.query(
+        "DELETE FROM seller_approval_admin_totp_credentials WHERE user_id = $1 AND enabled_at IS NULL",
+        [userId]
+      );
+      throw new AppError(
+        "Google OTP 설정 시간이 만료되었습니다. 설정 키를 다시 발급해 주세요.",
+        410,
+        "SELLER_APPROVAL_TOTP_SETUP_EXPIRED"
+      );
+    }
+
+    const verification = verifyTotpToken({
+      secret: decryptSellerApprovalTotpSecret(credential),
+      token: normalizedCode,
+      digits: sellerApprovalTotpDigits,
+      periodSeconds: sellerApprovalTotpPeriodSeconds,
+      window: sellerApprovalTotpWindow
+    });
+
+    if (!verification) {
+      throw new AppError(
+        "Google OTP 코드가 올바르지 않습니다.",
+        401,
+        "INVALID_SELLER_APPROVAL_OTP"
+      );
+    }
+
+    const updated = await client.query<SellerApprovalTotpCredentialRow>(
+      `
+        UPDATE seller_approval_admin_totp_credentials
+        SET enabled_at = NOW(),
+            pending_expires_at = NULL,
+            last_verified_at = NOW(),
+            last_used_time_step = $2,
+            updated_at = NOW()
+        WHERE user_id = $1
+        RETURNING
+          user_id,
+          secret_encrypted,
+          secret_iv,
+          secret_auth_tag,
+          enabled_at,
+          pending_expires_at,
+          last_verified_at,
+          last_used_time_step,
+          updated_at
+      `,
+      [userId, verification.step]
+    );
+
+    return updated.rows[0];
+  });
+}
+
+export async function verifySellerApprovalTotp(userId: string, code: string) {
+  const normalizedCode = normalizeSellerApprovalOtpCode(code);
+
+  return withTransaction(async (client) => {
+    const credential = await loadSellerApprovalTotpCredentialForUpdate(client, userId);
+
+    if (!credential?.enabled_at) {
+      throw new AppError(
+        "판매자 승인용 Google OTP가 아직 설정되지 않았습니다.",
+        503,
+        "SELLER_APPROVAL_TOTP_NOT_CONFIGURED"
+      );
+    }
+
+    const verification = verifyTotpToken({
+      secret: decryptSellerApprovalTotpSecret(credential),
+      token: normalizedCode,
+      digits: sellerApprovalTotpDigits,
+      periodSeconds: sellerApprovalTotpPeriodSeconds,
+      window: sellerApprovalTotpWindow
+    });
+
+    if (!verification) {
+      throw new AppError(
+        "Google OTP 코드가 올바르지 않습니다.",
+        401,
+        "INVALID_SELLER_APPROVAL_OTP"
+      );
+    }
+
+    if (
+      typeof credential.last_used_time_step === "number" &&
+      verification.step <= credential.last_used_time_step
+    ) {
+      throw new AppError(
+        "이미 사용한 Google OTP 코드입니다. 새 코드를 입력해 주세요.",
+        409,
+        "SELLER_APPROVAL_TOTP_REUSED"
+      );
+    }
+
+    const updated = await client.query<SellerApprovalTotpCredentialRow>(
+      `
+        UPDATE seller_approval_admin_totp_credentials
+        SET last_verified_at = NOW(),
+            last_used_time_step = $2,
+            updated_at = NOW()
+        WHERE user_id = $1
+        RETURNING
+          user_id,
+          secret_encrypted,
+          secret_iv,
+          secret_auth_tag,
+          enabled_at,
+          pending_expires_at,
+          last_verified_at,
+          last_used_time_step,
+          updated_at
+      `,
+      [userId, verification.step]
+    );
+
+    return updated.rows[0];
+  });
 }
 
 async function createSessionForUserId(client: DbClient, userId: string) {
@@ -399,7 +926,7 @@ async function ensureSignupAvailability(client: DbClient, loginId: string, email
 
 async function assignBaseRoles(client: DbClient, userId: string, loginId: string, displayName: string) {
   const normalizedLoginId = normalizeLoginId(loginId);
-  const roles = ["BUYER", ...(sellerApprovalAdminLoginId && normalizedLoginId === sellerApprovalAdminLoginId ? ["SELLER", "ADMIN"] : [])];
+  const roles = ["BUYER", ...(isSellerApprovalAdminLoginId(normalizedLoginId) ? ["SELLER", "ADMIN"] : [])];
 
   await client.query(
     `
@@ -417,7 +944,7 @@ async function assignBaseRoles(client: DbClient, userId: string, loginId: string
 }
 
 async function syncAutoAdminRoles(client: DbClient, user: { id: string; login_id: string; display_name: string }) {
-  if (!sellerApprovalAdminLoginId || normalizeLoginId(user.login_id) !== sellerApprovalAdminLoginId) {
+  if (!isSellerApprovalAdminLoginId(user.login_id)) {
     return;
   }
 
@@ -626,6 +1153,19 @@ async function upsertLocalPassword(
           updated_at = NOW()
     `,
     [input.userId, input.loginId, input.passwordHash]
+  );
+}
+
+async function revokeAllUserSessions(client: DbClient, userId: string) {
+  await client.query(
+    `
+      UPDATE user_sessions
+      SET revoked_at = NOW(),
+          updated_at = NOW()
+      WHERE user_id = $1
+        AND revoked_at IS NULL
+    `,
+    [userId]
   );
 }
 
@@ -1031,6 +1571,7 @@ export async function verifyBuyerAccountActivation(input: {
       loginId,
       passwordHash
     });
+    await revokeAllUserSessions(client, target.user_id);
     await client.query(
       `
         UPDATE users
@@ -1317,6 +1858,7 @@ export async function verifyLegacyAccountActivation(input: {
       loginId,
       passwordHash
     });
+    await revokeAllUserSessions(client, target.user_id);
     await client.query(
       `
         UPDATE users
@@ -1412,6 +1954,7 @@ export async function verifyPasswordReset(input: {
       loginId,
       passwordHash
     });
+    await revokeAllUserSessions(client, target.user_id);
     await client.query(
       `
         UPDATE users
@@ -1521,21 +2064,16 @@ export function setSessionCookie(response: Response, sessionToken: string, expir
   response.cookie(env.SESSION_COOKIE_NAME, sessionToken, cookieOptions(expiresAt));
 }
 
-export function verifySellerApprovalAdminPassword(password: string) {
-  if (!env.SELLER_APPROVAL_ADMIN_PASSWORD) {
-    throw new AppError("판매자 승인 관리자 비밀번호가 아직 설정되지 않았습니다.", 503);
-  }
-
-  if (!compareSecret(password, env.SELLER_APPROVAL_ADMIN_PASSWORD)) {
-    throw new AppError("관리자 비밀번호가 올바르지 않습니다.", 401);
-  }
-}
-
-export function setSellerApprovalAuthCookie(response: Response, sessionToken: string, userId: string) {
+export function setSellerApprovalAuthCookie(
+  response: Response,
+  sessionToken: string,
+  userId: string,
+  authVersion: string
+) {
   response.cookie(
     sellerApprovalAuthCookieName,
-    getSellerApprovalCookieValue(sessionToken, userId),
-    cookieOptions(addDays(1))
+    getSellerApprovalCookieValue(sessionToken, userId, authVersion),
+    cookieOptions(addMinutes(env.SELLER_APPROVAL_AUTH_TTL_MINUTES))
   );
 }
 
@@ -1543,14 +2081,15 @@ export function hasSellerApprovalAuthCookie(input: {
   sessionToken?: string;
   userId: string;
   cookieValue?: string;
+  authVersion?: string;
 }) {
-  if (!env.SELLER_APPROVAL_ADMIN_PASSWORD || !input.sessionToken || !input.cookieValue) {
+  if (!input.sessionToken || !input.cookieValue || !input.authVersion) {
     return false;
   }
 
   return compareSecret(
     input.cookieValue,
-    getSellerApprovalCookieValue(input.sessionToken, input.userId)
+    getSellerApprovalCookieValue(input.sessionToken, input.userId, input.authVersion)
   );
 }
 

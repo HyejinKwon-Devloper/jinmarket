@@ -11,6 +11,8 @@ import { Client } from "pg";
 
 const runId = `qa-${Date.now()}`;
 const now = Date.now();
+const csrfHeaderName = "x-jinmarket-csrf";
+const csrfHeaderValue = "1";
 
 function loadEnv() {
   const envPath = path.join(process.cwd(), ".env");
@@ -68,8 +70,14 @@ class ApiSession {
 
   async request(pathname, init = {}) {
     const headers = new Headers(init.headers ?? {});
+    const method = (init.method ?? "GET").toUpperCase();
+
     if (init.body && !headers.has("content-type")) {
       headers.set("content-type", "application/json");
+    }
+
+    if (!["GET", "HEAD", "OPTIONS"].includes(method)) {
+      headers.set(csrfHeaderName, csrfHeaderValue);
     }
 
     this.applyCookies(headers);

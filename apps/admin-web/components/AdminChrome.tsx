@@ -401,6 +401,7 @@ export function AdminChrome({ children }: { children: React.ReactNode }) {
             <span className="eyebrow" style={{ margin: 0 }}>
               홈 화면에 추가 가능
             </span>
+            <PwaInstallPrompt />
             {legalItems.map((item) => (
               <Link key={item.href} href={item.href}>
                 {item.label}

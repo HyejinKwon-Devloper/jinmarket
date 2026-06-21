@@ -337,3 +337,17 @@ export interface SellerAccessOverview {
   isAdmin: boolean;
   latestRequest?: SellerAccessRequestRecord | null;
 }
+
+export interface SellerApprovalAdminAuthStatus {
+  eligible: boolean;
+  verified: boolean;
+  totpEnabled: boolean;
+}
+
+export interface SellerApprovalTotpSetup {
+  issuer: string;
+  accountName: string;
+  manualEntryKey: string;
+  otpauthUrl: string;
+  expiresAt: string;
+}

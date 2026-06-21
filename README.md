@@ -71,10 +71,11 @@ npm run dev --workspace @jinmarket/admin-web
 2. Supabase SQL Editor에서 [schema.sql](C:/coding/jinmarket/db/schema.sql)을 실행합니다.
 3. 기존 스키마를 이미 올렸다면 [db/migrations](C:/coding/jinmarket/db/migrations) 아래 마이그레이션도 순서대로 적용합니다.
 4. Cloudinary와 이메일 인증 메일 발송용 SMTP 값을 `.env`에 넣습니다.
-5. 판매자 승인 화면을 사용할 관리자 계정의 로그인 아이디를 `SELLER_APPROVAL_ADMIN_LOGIN_ID`에, 2차 확인용 비밀번호를 `SELLER_APPROVAL_ADMIN_PASSWORD`에 설정합니다.
-6. 앱 런타임용 DB 계정은 `postgres` 대신 `api_app`처럼 `RLS`를 우회하지 않는 전용 role을 사용합니다.
-7. 프런트 앱은 `NEXT_PUBLIC_API_BASE_URL`을 기준으로 API에 직접 연결합니다.
-8. Next의 `/api` 프록시 라우트를 계속 사용할 경우에는 `API_PROXY_TARGET`도 같은 API 주소로 맞춥니다.
+5. 판매자 승인 화면을 사용할 관리자 계정은 `SELLER_APPROVAL_ADMIN_LOGIN_IDS`에 넣습니다. 한 계정만 허용하려면 단일 값만 넣으면 됩니다.
+6. `SELLER_APPROVAL_TOTP_ENCRYPTION_SECRET`는 배포마다 바뀌면 기존 관리자 OTP 등록값을 복호화할 수 없으니, 환경별로 한 번 정한 뒤 안정적으로 유지합니다.
+7. 앱 런타임용 DB 계정은 `postgres` 대신 `api_app`처럼 `RLS`를 우회하지 않는 전용 role을 사용합니다.
+8. 프런트 앱은 `NEXT_PUBLIC_API_BASE_URL`을 기준으로 API에 직접 연결합니다.
+9. Next의 `/api` 프록시 라우트를 계속 사용할 경우에는 `API_PROXY_TARGET`도 같은 API 주소로 맞춥니다.
 
 환경별 권장 값:
 
@@ -83,7 +84,10 @@ npm run dev --workspace @jinmarket/admin-web
   - `API_PROXY_TARGET=https://jinmarket.test:4000`
   - `NEXT_PUBLIC_SHOP_APP_URL=https://jinmarket.test:3000`
   - `NEXT_PUBLIC_ADMIN_APP_URL=https://jinmarket.test:3001`
-  - `SELLER_APPROVAL_ADMIN_LOGIN_ID=admin`
+  - `SELLER_APPROVAL_ADMIN_LOGIN_IDS=admin`
+  - `SELLER_APPROVAL_AUTH_TTL_MINUTES=15`
+  - `SELLER_APPROVAL_TOTP_ISSUER=Jinmarket Admin`
+  - `SELLER_APPROVAL_TOTP_ENCRYPTION_SECRET=local-stable-secret`
   - `DATABASE_URL=postgresql://api_app:password@db.example.supabase.co:5432/postgres?sslmode=require`
   - `SMTP_HOST=smtp.example.com`
   - `SMTP_PORT=587`
@@ -93,7 +97,10 @@ npm run dev --workspace @jinmarket/admin-web
   - `API_PROXY_TARGET=https://api.example.com`
   - `NEXT_PUBLIC_SHOP_APP_URL=https://web.jinmarket.shop`
   - `NEXT_PUBLIC_ADMIN_APP_URL=https://management.jinmarket.shop`
-  - `SELLER_APPROVAL_ADMIN_LOGIN_ID=admin`
+  - `SELLER_APPROVAL_ADMIN_LOGIN_IDS=admin`
+  - `SELLER_APPROVAL_AUTH_TTL_MINUTES=15`
+  - `SELLER_APPROVAL_TOTP_ISSUER=Jinmarket Admin`
+  - `SELLER_APPROVAL_TOTP_ENCRYPTION_SECRET=production-stable-secret`
   - `DATABASE_URL=postgresql://api_app:password@db.example.supabase.co:5432/postgres?sslmode=require`
   - `SMTP_HOST=smtp.example.com`
   - `SMTP_PORT=587`
@@ -102,6 +109,30 @@ npm run dev --workspace @jinmarket/admin-web
 ## Local HTTPS
 
 로컬 세션 쿠키 테스트는 `localhost` 대신 커스텀 HTTPS 도메인을 사용하는 편이 안전합니다. 현재 프로젝트 기본 도메인은 `jinmarket.test`입니다.
+
+## Fixed Google OTP Provisioning
+
+판매자 승인용 Google OTP는 웹 화면에서 새로 등록하지 않고, 운영자가 로컬에서 고정 등록합니다.
+
+1. `.env` 또는 배포 환경변수에 `SELLER_APPROVAL_ADMIN_LOGIN_IDS=admin` 과 `SELLER_APPROVAL_TOTP_ENCRYPTION_SECRET`를 먼저 설정합니다.
+2. 계정이 이미 생성되어 있는 상태에서 아래 명령을 실행합니다.
+
+```bash
+npm run seller-approval:provision-totp -- --login-id _nav.jin
+```
+
+3. 명령 실행 결과로 아래 값이 출력됩니다.
+   - `Manual Entry Key`
+   - `Issuer`
+   - `Account Name`
+   - `otpauth URL`
+4. 휴대폰에서 Google Authenticator를 열고 `+` → `설정 키 입력`을 누른 뒤, 출력된 `Manual Entry Key`를 시간 기반 방식으로 등록합니다.
+5. 이후 판매자 승인 화면에서는 방금 등록한 앱의 6자리 코드만 통과합니다.
+
+주의:
+
+- 이 명령을 다시 실행하면 기존 OTP secret이 교체됩니다.
+- `SELLER_APPROVAL_TOTP_ENCRYPTION_SECRET`를 바꾸면 DB에 저장된 기존 OTP secret을 복호화할 수 없습니다.
 
 1. Windows `hosts` 파일에 `127.0.0.1 jinmarket.test`를 추가합니다.
 2. 한 번만 `npm run dev:cert`를 실행해 로컬 HTTPS 인증서를 생성합니다.
