@@ -4,12 +4,14 @@ import { useEffect, useMemo, useState } from "react";
 
 import { CloseIcon } from "./ui/Icons";
 
+type InstallChoice = {
+  outcome: "accepted" | "dismissed";
+  platform: string;
+};
+
 interface BeforeInstallPromptEvent extends Event {
   prompt: () => Promise<void>;
-  userChoice: Promise<{
-    outcome: "accepted" | "dismissed";
-    platform: string;
-  }>;
+  userChoice: Promise<InstallChoice>;
 }
 
 type InstallMode =
@@ -23,6 +25,7 @@ type ButtonVariant = "primary" | "outline" | "subtle";
 
 type PlatformInfo = {
   isAndroid: boolean;
+  isDesktop: boolean;
   isIos: boolean;
   isMacSafari: boolean;
 };
@@ -44,14 +47,14 @@ type PwaInstallPromptProps = {
 const baseButtonClasses =
   "inline-flex min-h-10 items-center justify-center rounded-xl border px-3.5 py-2 text-[13px] font-semibold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--buyer-accent)] focus-visible:ring-offset-2 focus-visible:ring-offset-white disabled:pointer-events-none disabled:opacity-55 sm:min-h-11 sm:px-4 sm:text-sm";
 
-const buttonVariantClasses: Record<ButtonVariant, string> = {
+const variantClasses = {
   primary:
-    "border-[var(--buyer-primary)] bg-[var(--buyer-primary)] text-white shadow-[0_14px_30px_rgba(31,78,121,0.18)] hover:border-[var(--buyer-primary-strong)] hover:bg-[var(--buyer-primary-strong)]",
+    "border-[var(--buyer-primary)] bg-[var(--buyer-primary)] text-white shadow-[0_14px_30px_rgba(31,78,121,0.18)] hover:bg-[var(--buyer-primary-strong)] hover:border-[var(--buyer-primary-strong)]",
   outline:
     "border-[var(--buyer-primary)] bg-white text-[var(--buyer-primary)] hover:bg-[var(--buyer-soft)]",
   subtle:
     "border-transparent bg-[var(--buyer-soft)] text-[var(--buyer-dark)] hover:bg-[var(--buyer-soft-strong)]",
-};
+} as const;
 
 function classNames(...values: Array<string | false | null | undefined>) {
   return values.filter(Boolean).join(" ");
@@ -72,6 +75,7 @@ function detectPlatformInfo(): PlatformInfo {
 
   return {
     isAndroid,
+    isDesktop: !isIos && !isAndroid,
     isIos,
     isMacSafari: isMac && isSafari,
   };
@@ -126,15 +130,15 @@ function getInstallGuide(mode: InstallMode, hasPrompt: boolean): InstallGuide {
   if (hasPrompt) {
     return {
       eyebrow: "Install App",
-      title: "설치 창이 열리면 바로 판매자 센터를 추가할 수 있어요",
+      title: "설치 창이 열리면 바로 관리자 앱을 추가할 수 있어요.",
       description:
-        "브라우저 설치 창이 뜨면 JINMARKET Admin을 앱처럼 등록하면 됩니다.",
+        "브라우저 공식 설치 창에서 JINMARKET Admin을 홈 화면이나 바탕화면에 등록할 수 있어요.",
       steps: [
-        "열리는 설치 창에서 앱 추가 또는 설치를 승인하세요.",
-        "설치가 끝나면 바탕화면, Dock, 시작 메뉴에서 바로 실행할 수 있어요.",
-        "설치 후에는 주문과 상품 관리 화면이 독립 앱 창으로 열립니다.",
+        "열리는 설치 창에서 JINMARKET Admin 추가를 확인해 주세요.",
+        "설치가 끝나면 홈 화면, 바탕화면, Dock에서 바로 실행할 수 있어요.",
+        "설치 후에는 관리자 화면도 일반 탭이 아닌 앱 창처럼 더 깔끔하게 열립니다.",
       ],
-      tip: "Chrome, Edge, Android 브라우저에서는 이 방식이 가장 빠릅니다.",
+      tip: "Chrome, Edge, Android 브라우저에서 가장 자연스럽게 설치할 수 있어요.",
     };
   }
 
@@ -142,59 +146,63 @@ function getInstallGuide(mode: InstallMode, hasPrompt: boolean): InstallGuide {
     case "ios":
       return {
         eyebrow: "iPhone / iPad",
-        title: "공유 메뉴에서 판매자 센터 앱을 설치하세요",
+        title: "공유 메뉴에서 관리자 앱을 설치하세요.",
         description:
-          "iOS는 웹페이지가 설치를 직접 실행할 수 없어서 공유 메뉴에서 한 번만 추가해 주면 됩니다.",
+          "iOS에서는 보안 정책상 웹페이지가 직접 설치를 실행하지 못해서 공유 메뉴에서 한 번 더 확인해 주셔야 해요.",
         steps: [
-          "Safari, Chrome, Edge에서 공유 버튼을 누르세요.",
-          "메뉴에서 `앱 설치`를 선택하세요.",
+          "Safari, Chrome, Edge에서 공유 버튼을 눌러 주세요.",
+          "메뉴에서 `앱 설치`를 선택해 주세요.",
           "추가를 누르면 관리자 앱 아이콘이 홈 화면에 생깁니다.",
         ],
-        tip: "한 번 추가하면 일반 앱처럼 전체 화면으로 열리고, 이후에는 푸시도 받을 수 있습니다.",
+        tip: "한 번 추가해 두면 일반 탭보다 앱처럼 더 안정적으로 열 수 있어요.",
       };
     case "android-manual":
       return {
         eyebrow: "Android",
-        title: "브라우저 메뉴에서 관리자 앱으로 추가할 수 있어요",
+        title: "브라우저 메뉴에서 관리자 앱을 홈 화면에 추가할 수 있어요.",
         description:
-          "설치 팝업이 아직 안 떠도 메뉴에서 바로 홈 화면 추가를 진행할 수 있습니다.",
+          "설치 팝업이 바로 뜨지 않아도 브라우저 메뉴에서 홈 화면 추가를 진행할 수 있어요.",
         steps: [
-          "Chrome 또는 Edge의 우상단 메뉴를 여세요.",
-          "`앱 설치`를 선택하세요.",
-          "확인하면 홈 화면에 관리자 앱 아이콘이 생성됩니다.",
+          "Chrome 또는 Edge의 오른쪽 상단 메뉴를 열어 주세요.",
+          "`앱 설치`를 선택해 주세요.",
+          "확인하면 관리자 앱 아이콘이 홈 화면에 생성됩니다.",
         ],
-        tip: "주소창 오른쪽 설치 아이콘이 보이면 그 버튼으로 더 빠르게 설치할 수 있습니다.",
+        tip: "주소창 쪽 설치 아이콘이 보이면 그 버튼으로 더 빠르게 설치할 수 있어요.",
       };
     case "desktop-safari":
       return {
         eyebrow: "Safari on macOS",
-        title: "Mac Dock에 판매자 센터를 추가할 수 있어요",
+        title: "Mac Dock에 관리자 앱을 추가할 수 있어요.",
         description:
-          "Safari는 자체 설치 창 대신 메뉴의 Dock 추가 기능을 사용합니다.",
+          "Safari에서는 자체 설치 팝업 대신 메뉴의 Dock 추가 기능을 사용할 수 있어요.",
         steps: [
-          "Safari 상단 메뉴의 `파일`을 여세요.",
-          "`Dock에 추가`를 선택하세요.",
-          "추가 후 Dock 또는 Launchpad에서 관리자 센터를 바로 열 수 있습니다.",
+          "Safari 상단 메뉴에서 `파일`을 열어 주세요.",
+          "`Dock에 추가`를 선택해 주세요.",
+          "추가 후에는 Dock 또는 Launchpad에서 관리자 앱을 바로 실행할 수 있어요.",
         ],
-        tip: "Mac에서는 Safari와 Chromium 계열 브라우저가 가장 안정적으로 설치를 지원합니다.",
+        tip: "Mac에서는 Safari와 Chromium 계열 브라우저가 가장 안정적으로 설치를 지원해요.",
       };
     default:
       return {
         eyebrow: "Desktop Web",
-        title: "브라우저 설치 메뉴에서 관리자 앱으로 추가할 수 있어요",
+        title: "브라우저 설치 메뉴에서 관리자 앱을 추가할 수 있어요.",
         description:
-          "브라우저가 직접 설치 창을 주지 않을 때는 메뉴에서 수동 설치가 가능합니다.",
+          "브라우저가 직접 설치 창을 주지 않을 때도 메뉴에서 수동 설치가 가능해요.",
         steps: [
           "주소창 오른쪽 설치 아이콘이 보이면 먼저 눌러 보세요.",
-          "없다면 브라우저 메뉴에서 `앱 설치`, `Install app`를 선택하세요.",
-          "설치 후에는 바탕화면, 작업 표시줄, Dock 중 하나에서 바로 실행할 수 있습니다.",
+          "없다면 브라우저 메뉴에서 `앱 설치`, `Install app`를 선택해 주세요.",
+          "설치 후에는 바탕화면, 작업 표시줄, Dock 중 한 곳에서 바로 실행할 수 있어요.",
         ],
-        tip: "데스크탑에서는 Chrome과 Edge가 가장 잘 지원하고, macOS Safari는 `파일 > Dock에 추가`를 사용합니다.",
+        tip: "데스크톱에서는 Chrome과 Edge가 가장 잘 지원되고, macOS Safari는 `파일 > Dock에 추가`를 사용하면 돼요.",
       };
   }
 }
 
-export function PwaInstallPrompt() {
+export function PwaInstallPromptUnified({
+  className,
+  showDismissButton = true,
+  variant = "outline",
+}: PwaInstallPromptProps) {
   const [deferredPrompt, setDeferredPrompt] =
     useState<BeforeInstallPromptEvent | null>(null);
   const [installMode, setInstallMode] = useState<InstallMode>("desktop-manual");
@@ -271,11 +279,41 @@ export function PwaInstallPrompt() {
     setShowGuide(true);
   }
 
+  const button = (
+    <button
+      className={classNames(
+        baseButtonClasses,
+        variantClasses[variant],
+        className,
+      )}
+      type="button"
+      onClick={() => void handleInstall()}
+    >
+      {getButtonLabel(installMode, hasPrompt)}
+    </button>
+  );
+
   return (
     <>
-      <button type="button" onClick={() => void handleInstall()}>
-        {getButtonLabel(installMode, hasPrompt)}
-      </button>
+      {showDismissButton ? (
+        <div className="flex items-center gap-2 rounded-2xl border border-[var(--buyer-border)] bg-white/90 p-1 shadow-sm">
+          {button}
+          <button
+            aria-label="설치 안내 닫기"
+            className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-xl text-[var(--buyer-muted)] transition hover:bg-[var(--buyer-soft)] hover:text-[var(--buyer-dark)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--buyer-accent)] focus-visible:ring-offset-2"
+            type="button"
+            onClick={() => {
+              setIsVisible(false);
+              setShowGuide(false);
+            }}
+          >
+            <CloseIcon className="h-4 w-4" />
+            <span className="sr-only">설치 안내 닫기</span>
+          </button>
+        </div>
+      ) : (
+        button
+      )}
 
       {showGuide ? (
         <div className="fixed inset-0 z-50 flex items-end justify-center bg-slate-950/45 p-4 sm:items-center">

@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { sanitizeProfileImageUrl, type SessionUser } from "@jinmarket/shared";
 
 import {
@@ -11,7 +11,7 @@ import {
   isApprovalAdmin,
   requestJson,
 } from "../lib/api";
-import { PwaInstallPrompt } from "./PwaInstallPrompt";
+import { PwaInstallPromptUnified } from "./PwaInstallPromptUnified";
 import { PushNotificationPrompt } from "./PushNotificationPrompt";
 import {
   ArrowRightIcon,
@@ -138,6 +138,8 @@ export function AdminChrome({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<SessionUser | null>(null);
   const [navOpen, setNavOpen] = useState(false);
   const [profileImageFailed, setProfileImageFailed] = useState(false);
+  const menuButtonRef = useRef<HTMLButtonElement | null>(null);
+  const closeButtonRef = useRef<HTMLButtonElement | null>(null);
   const pathname = usePathname();
   const isImmersiveRoute =
     pathname === "/random-game" || pathname.startsWith("/random-game/");
@@ -194,10 +196,12 @@ export function AdminChrome({ children }: { children: React.ReactNode }) {
     }
 
     const previousOverflow = document.body.style.overflow;
+    closeButtonRef.current?.focus();
 
     function handleKeyDown(event: KeyboardEvent) {
       if (event.key === "Escape") {
         setNavOpen(false);
+        menuButtonRef.current?.focus();
       }
     }
 
@@ -223,7 +227,40 @@ export function AdminChrome({ children }: { children: React.ReactNode }) {
 
   return (
     <div className="shell">
-      <header className="adminHeader safe-area-top safe-area-inline">
+      <header className="sticky top-0 z-30 border-b border-[var(--buyer-border)] bg-white/90 backdrop-blur">
+        <div className="safe-area-top safe-area-inline">
+          <div className="mx-auto flex max-w-6xl items-center justify-between gap-4 px-4 py-3.5 sm:px-6 sm:py-4">
+            <div className="min-w-0 space-y-1.5">
+              <p className="text-[10px] font-semibold uppercase tracking-[0.22em] text-[var(--buyer-primary)] sm:text-xs">
+                Jinmarket Seller
+              </p>
+              <div className="flex flex-wrap items-center gap-2">
+                <Link
+                  href="/"
+                  className="block text-[22px] font-extrabold tracking-[-0.03em] text-[var(--buyer-dark)] sm:text-2xl"
+                >
+                  JINMARKET
+                </Link>
+              </div>
+            </div>
+
+            <button
+              ref={menuButtonRef}
+              type="button"
+              className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-[var(--buyer-border)] bg-white text-[var(--buyer-dark)] shadow-sm transition hover:bg-[var(--buyer-softest)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--buyer-accent)] focus-visible:ring-offset-2"
+              aria-label="메뉴 열기"
+              aria-expanded={navOpen}
+              aria-controls="admin-navigation-drawer"
+              onClick={() => setNavOpen(true)}
+            >
+              <MenuIcon className="h-5 w-5" />
+              <span className="sr-only">메뉴 열기</span>
+            </button>
+          </div>
+        </div>
+      </header>
+
+      <header className="hidden adminHeader safe-area-top safe-area-inline">
         <div className="adminHeaderSurface">
           <div className="adminHeaderRow">
             <div className="adminBrandLockup">
@@ -260,7 +297,10 @@ export function AdminChrome({ children }: { children: React.ReactNode }) {
           className="adminDrawerBackdrop"
           tabIndex={navOpen ? 0 : -1}
           type="button"
-          onClick={() => setNavOpen(false)}
+          onClick={() => {
+            setNavOpen(false);
+            menuButtonRef.current?.focus();
+          }}
         />
 
         <aside
@@ -272,6 +312,29 @@ export function AdminChrome({ children }: { children: React.ReactNode }) {
         >
           <div className="adminDrawerPanel">
             <div className="adminDrawerHeader">
+              <div className="adminDrawerToolbar">
+                <div className="adminDrawerTitleBlock">
+                  <p className="eyebrow" id="admin-navigation-title">
+                    Admin Menu
+                  </p>
+                  <h2 className="adminDrawerTitle">관리자 메뉴</h2>
+                </div>
+
+                <button
+                  aria-label="메뉴 닫기"
+                  ref={closeButtonRef}
+                  className="adminCloseButton"
+                  type="button"
+                  onClick={() => {
+                    setNavOpen(false);
+                    menuButtonRef.current?.focus();
+                  }}
+                >
+                  <CloseIcon className="h-5 w-5" />
+                  <span className="sr-only">메뉴 닫기</span>
+                </button>
+              </div>
+
               <div className="adminProfileCard">
                 <span aria-hidden="true" className="adminAvatar">
                   {safeProfileImageUrl && !profileImageFailed ? (
@@ -286,9 +349,7 @@ export function AdminChrome({ children }: { children: React.ReactNode }) {
                   )}
                 </span>
                 <div className="adminProfileMeta">
-                  <p className="eyebrow" id="admin-navigation-title">
-                    Admin Menu
-                  </p>
+                  <p className="eyebrow">Signed in user</p>
                   <strong className="adminProfileName">
                     {user?.displayName ?? "관리자 계정"}
                   </strong>
@@ -310,16 +371,6 @@ export function AdminChrome({ children }: { children: React.ReactNode }) {
                 <span className="sr-only">메뉴 닫기</span>
               </button>
             </div>
-
-            <div className="adminDrawerCurrentCard">
-              <p className="eyebrow">현재 메뉴</p>
-              <strong>{currentItem?.label ?? "관리자 홈"}</strong>
-              <p>
-                {currentItem?.description ??
-                  "상품, 이벤트, 주문, 승인까지 하나의 디자인 시스템으로 관리합니다."}
-              </p>
-            </div>
-
             <hr className="adminDrawerDivider" />
 
             <nav aria-label="관리자 주요 메뉴" className="adminDrawerNav">
@@ -366,8 +417,14 @@ export function AdminChrome({ children }: { children: React.ReactNode }) {
               </div>
 
               <div className="adminDrawerActions">
-                <PwaInstallPrompt />
-                <PushNotificationPrompt app="ADMIN" isLoggedIn={Boolean(user)} />
+                <PwaInstallPromptUnified
+                  className="min-h-11 px-4"
+                  showDismissButton={false}
+                />
+                <PushNotificationPrompt
+                  app="ADMIN"
+                  isLoggedIn={Boolean(user)}
+                />
                 <a
                   className="ghostButton"
                   href={shopAppUrl}
@@ -406,10 +463,10 @@ export function AdminChrome({ children }: { children: React.ReactNode }) {
             <Link href="/privacy">개인정보처리방침</Link>
             <Link href="/terms">이용약관</Link>
             <Link href="/data-deletion">데이터 삭제 안내</Link>
-            <span className="eyebrow" style={{ margin: 0 }}>
-              홈 화면에 추가 가능
-            </span>
-            <PwaInstallPrompt />
+            <PwaInstallPromptUnified
+              className="min-h-10 px-3.5"
+              showDismissButton={false}
+            />
             {legalItems.map((item) => (
               <Link key={item.href} href={item.href}>
                 {item.label}

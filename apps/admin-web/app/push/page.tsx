@@ -1,3 +1,3 @@
 "use client";
 
-export { ManagedPushNotificationsPageContent as default } from "../../components/ManagedPushNotificationsPageContent";
+export { ManagedPushNotificationsPageContentV2 as default } from "../../components/ManagedPushNotificationsPageContentV2";

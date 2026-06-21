@@ -179,10 +179,15 @@ export function ManagedSellerApprovalPageContent() {
             </div>
           </form>
         ) : (
-          <p className="muted" style={{ marginTop: 18 }}>
+          <>
+            <p className="muted" style={{ marginTop: 18 }}>
             이 계정의 판매자 승인 OTP는 웹에서 새로 등록할 수 없습니다. 운영자가 미리 고정 등록한 뒤
             다시 시도해 주세요.
           </p>
+            <p className="muted" style={{ marginTop: 12 }}>
+              OTP provisioning: <code>npx tsx scripts/provision-seller-approval-totp.ts --login-id your-admin-login-id</code>
+            </p>
+          </>
         )}
         {message ? <div className="message">{message}</div> : null}
       </section>

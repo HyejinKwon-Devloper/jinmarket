@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-import { query, withTransaction, type DbClient } from "@jinmarket/db";
+import { query, runWithSystemDbContext, withTransaction, type DbClient } from "@jinmarket/db";
 import { MAX_EVENT_IMAGES } from "../../../shared/src/index.js";
 import type {
   CreateEventInput,
@@ -12,6 +12,8 @@ import type {
 } from "../../../shared/src/index.js";
 
 import { AppError, isPgUniqueError } from "../errors.js";
+import { safeUserLoginIdSql } from "./account-sql.js";
+import { loadUserIdentityMap } from "./user-identity-service.js";
 
 const isoDateTimeSchema = z.string().datetime({ offset: true });
 
@@ -58,6 +60,8 @@ type EventCardRow = {
   created_at: Date;
 };
 
+type EventCardQueryRow = Omit<EventCardRow, "seller_display_name">;
+
 type EventImageRow = {
   id: string;
   image_url: string;
@@ -75,6 +79,10 @@ type EventEntryRow = {
   user_display_name: string;
   user_threads_username: string | null;
   created_at: Date;
+};
+
+type EventEntryQueryRow = Omit<EventEntryRow, "user_display_name"> & {
+  user_id: string;
 };
 
 function mapEventCard(row: EventCardRow): EventCard {
@@ -116,30 +124,77 @@ function mapEventEntry(row: EventEntryRow): EventEntryRecord {
   };
 }
 
+async function hydrateEventCardRows(rows: EventCardQueryRow[], client?: DbClient) {
+  const identities = await loadEventIdentityMap(
+    rows.map((row) => row.seller_id),
+    client,
+  );
+
+  return rows.map((row) => {
+    const seller = identities.get(row.seller_id);
+
+    if (!seller) {
+      throw new Error("Failed to load event seller identity.");
+    }
+
+    return {
+      ...row,
+      seller_display_name: seller.displayName
+    } satisfies EventCardRow;
+  });
+}
+
+async function hydrateEventEntryRows(rows: EventEntryQueryRow[], client?: DbClient) {
+  const identities = await loadEventIdentityMap(
+    rows.map((row) => row.user_id),
+    client,
+  );
+
+  return rows.map((row) => {
+    const user = identities.get(row.user_id);
+
+    if (!user) {
+      throw new Error("Failed to load event entry user identity.");
+    }
+
+    return {
+      id: row.id,
+      event_id: row.event_id,
+      user_display_name: user.displayName,
+      user_threads_username: row.user_threads_username,
+      created_at: row.created_at
+    } satisfies EventEntryRow;
+  });
+}
+
+async function loadEventIdentityMap(
+  userIds: Array<string | null | undefined>,
+  client?: DbClient,
+) {
+  if (client) {
+    return loadUserIdentityMap(userIds, client);
+  }
+
+  return runWithSystemDbContext(() => loadUserIdentityMap(userIds));
+}
+
 function buildEventListQuery(filterToVisibleWindow: boolean) {
   return `
     SELECT
       e.id,
       e.seller_id,
-      seller.display_name AS seller_display_name,
       e.title,
       e.description,
       e.registration_mode,
       primary_image.image_url AS primary_image_url,
       e.starts_at,
       e.ends_at,
-      COALESCE(entry_stats.entry_count, 0) AS entry_count,
+      private.event_entry_count(e.id) AS entry_count,
       e.created_at
     FROM events e
-    JOIN users seller ON seller.id = e.seller_id
     LEFT JOIN event_images primary_image
       ON primary_image.event_id = e.id
      AND primary_image.is_primary = TRUE
-    LEFT JOIN LATERAL (
-      SELECT COUNT(*)::int AS entry_count
-      FROM event_entries entry_row
-      WHERE entry_row.event_id = e.id
-    ) entry_stats ON TRUE
     ${filterToVisibleWindow ? "WHERE e.ends_at >= NOW()" : ""}
     ORDER BY
       CASE
@@ -208,36 +263,30 @@ async function getEventImages(eventId: string) {
 }
 
 async function getEventById(eventId: string) {
-  const result = await query<EventCardRow>(
+  const result = await query<EventCardQueryRow>(
     `
       SELECT
         e.id,
         e.seller_id,
-        seller.display_name AS seller_display_name,
         e.title,
         e.description,
         e.registration_mode,
         primary_image.image_url AS primary_image_url,
         e.starts_at,
         e.ends_at,
-        COALESCE(entry_stats.entry_count, 0) AS entry_count,
+        private.event_entry_count(e.id) AS entry_count,
         e.created_at
       FROM events e
-      JOIN users seller ON seller.id = e.seller_id
       LEFT JOIN event_images primary_image
         ON primary_image.event_id = e.id
        AND primary_image.is_primary = TRUE
-      LEFT JOIN LATERAL (
-        SELECT COUNT(*)::int AS entry_count
-        FROM event_entries entry_row
-        WHERE entry_row.event_id = e.id
-      ) entry_stats ON TRUE
       WHERE e.id = $1
     `,
     [eventId],
   );
 
-  return result.rows[0] ?? null;
+  const rows = await hydrateEventCardRows(result.rows);
+  return rows[0] ?? null;
 }
 
 async function ensureSellerOwnsEvent(sellerId: string, eventId: string) {
@@ -263,8 +312,8 @@ function isEventActive(event: Pick<EventCard, "startsAt" | "endsAt">) {
 }
 
 export async function listPublicEvents() {
-  const result = await query<EventCardRow>(buildEventListQuery(true));
-  return result.rows.map(mapEventCard);
+  const result = await query<EventCardQueryRow>(buildEventListQuery(true));
+  return (await hydrateEventCardRows(result.rows)).map(mapEventCard);
 }
 
 export async function getPublicEventDetail(eventId: string, viewerId?: string | null): Promise<EventDetail> {
@@ -352,37 +401,30 @@ export async function createEvent(sellerId: string, input: CreateEventInput) {
 }
 
 export async function listSellerEvents(sellerId: string) {
-  const result = await query<EventCardRow>(
+  const result = await query<EventCardQueryRow>(
     `
       SELECT
         e.id,
         e.seller_id,
-        seller.display_name AS seller_display_name,
         e.title,
         e.description,
         e.registration_mode,
         primary_image.image_url AS primary_image_url,
         e.starts_at,
         e.ends_at,
-        COALESCE(entry_stats.entry_count, 0) AS entry_count,
+        private.event_entry_count(e.id) AS entry_count,
         e.created_at
       FROM events e
-      JOIN users seller ON seller.id = e.seller_id
       LEFT JOIN event_images primary_image
         ON primary_image.event_id = e.id
        AND primary_image.is_primary = TRUE
-      LEFT JOIN LATERAL (
-        SELECT COUNT(*)::int AS entry_count
-        FROM event_entries entry_row
-        WHERE entry_row.event_id = e.id
-      ) entry_stats ON TRUE
       WHERE e.seller_id = $1
       ORDER BY e.created_at DESC
     `,
     [sellerId],
   );
 
-  return result.rows.map(mapEventCard);
+  return (await hydrateEventCardRows(result.rows)).map(mapEventCard);
 }
 
 export async function getSellerEventDetail(sellerId: string, eventId: string): Promise<EventDetail> {
@@ -397,7 +439,7 @@ export async function getSellerEventDetail(sellerId: string, eventId: string): P
 }
 
 export async function createEventEntry(userId: string, eventId: string) {
-  return withTransaction(async (client) => {
+  return runWithSystemDbContext(() => withTransaction(async (client) => {
     const eventResult = await client.query<{
       id: string;
       seller_id: string;
@@ -438,7 +480,7 @@ export async function createEventEntry(userId: string, eventId: string) {
     }
 
     try {
-      const inserted = await client.query<EventEntryRow>(
+      const inserted = await client.query<EventEntryQueryRow>(
         `
           WITH inserted AS (
             INSERT INTO event_entries (event_id, user_id)
@@ -448,19 +490,15 @@ export async function createEventEntry(userId: string, eventId: string) {
           SELECT
             inserted.id,
             inserted.event_id,
-            user_row.display_name AS user_display_name,
-            auth.provider_username AS user_threads_username,
+            $2::uuid AS user_id,
+            ${safeUserLoginIdSql("$2")} AS user_threads_username,
             inserted.created_at
           FROM inserted
-          JOIN users user_row ON user_row.id = $2
-          LEFT JOIN auth_accounts auth
-            ON auth.user_id = user_row.id
-           AND auth.provider = 'THREADS'
         `,
         [eventId, userId],
       );
 
-      return mapEventEntry(inserted.rows[0]);
+      return mapEventEntry((await hydrateEventEntryRows(inserted.rows, client))[0]);
     } catch (error) {
       if (isPgUniqueError(error)) {
         throw new AppError("이미 응모를 완료한 이벤트입니다.", 409);
@@ -468,32 +506,28 @@ export async function createEventEntry(userId: string, eventId: string) {
 
       throw error;
     }
-  });
+  }));
 }
 
 export async function listEventEntries(sellerId: string, eventId: string) {
   await ensureSellerOwnsEvent(sellerId, eventId);
 
-  const result = await query<EventEntryRow>(
+  const result = await query<EventEntryQueryRow>(
     `
       SELECT
         entry_row.id,
         entry_row.event_id,
-        user_row.display_name AS user_display_name,
-        auth.provider_username AS user_threads_username,
+        entry_row.user_id,
+        ${safeUserLoginIdSql("entry_row.user_id")} AS user_threads_username,
         entry_row.created_at
       FROM event_entries entry_row
-      JOIN users user_row ON user_row.id = entry_row.user_id
-      LEFT JOIN auth_accounts auth
-        ON auth.user_id = user_row.id
-       AND auth.provider = 'THREADS'
       WHERE entry_row.event_id = $1
       ORDER BY entry_row.created_at DESC
     `,
     [eventId],
   );
 
-  return result.rows.map(mapEventEntry);
+  return (await hydrateEventEntryRows(result.rows)).map(mapEventEntry);
 }
 
 export async function getEventDrawSource(sellerId: string, eventId: string): Promise<EventDrawSource> {

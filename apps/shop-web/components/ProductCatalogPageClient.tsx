@@ -92,7 +92,7 @@ export function ProductCatalogPageClient({
   }, [sections, selectedSellerKey]);
 
   return (
-    <div className="space-y-4 px-1 sm:space-y-6 sm:px-0">
+    <div className="space-y-4 px-3 sm:space-y-6 sm:px-2">
       <section className="overflow-hidden rounded-[26px] border border-[var(--buyer-border)] bg-white shadow-[0_18px_42px_rgba(15,23,42,0.06)] sm:rounded-[32px] sm:shadow-[0_24px_60px_rgba(15,23,42,0.06)]">
         <div className="space-y-4 px-4 py-4 sm:px-7 sm:py-6">
           <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
@@ -161,7 +161,7 @@ export function ProductCatalogPageClient({
       </section>
 
       <section className="space-y-3">
-        <div className="space-y-3 px-1.5">
+        <div className="space-y-3 px-3 sm:px-2">
           <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
             <div className="space-y-1">
               <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[var(--buyer-primary)]">
@@ -173,8 +173,7 @@ export function ProductCatalogPageClient({
                   : `${productFilterLabels[activeFilter]}을 판매자별로 둘러보세요`}
               </h2>
               <p className="text-[12px] leading-5 text-[var(--buyer-muted)] sm:text-sm sm:leading-6">
-                판매자 프로필을 선택하면 해당 판매자의 상품만 바로 볼 수
-                있어요.
+                판매자 프로필을 선택하면 해당 판매자의 상품만 바로 볼 수 있어요.
               </p>
             </div>
           </div>

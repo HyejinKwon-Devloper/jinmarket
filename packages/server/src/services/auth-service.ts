@@ -9,7 +9,13 @@ import {
 } from "node:crypto";
 import { z } from "zod";
 
-import { query, runWithDbContext, withTransaction, type DbClient } from "@jinmarket/db";
+import {
+  query,
+  runWithDbContext,
+  runWithSystemDbContext,
+  withTransaction,
+  type DbClient
+} from "@jinmarket/db";
 import {
   sanitizeProfileImageUrl,
   type SellerApprovalAdminAuthStatus,
@@ -21,6 +27,14 @@ import { AppError, isPgUniqueError } from "../errors.js";
 import { env, isSellerApprovalAdminLoginId } from "../env.js";
 import { addDays, addMinutes, generateSessionToken, hashSessionToken } from "../utils/auth.js";
 import { hashPassword, hashVerificationCode, verifyPassword } from "../utils/password.js";
+import {
+  decryptDisplayName,
+  decryptOptionalEmail,
+  encryptPiiText,
+  hashEmailLookup,
+  type EncryptedDisplayNameColumns,
+  type EncryptedEmailColumns
+} from "../utils/pii.js";
 import {
   buildTotpOtpauthUrl,
   generateTotpSecret,
@@ -41,15 +55,29 @@ export const sellerApprovalAuthCookieName = "jm_seller_approval_auth";
 
 const emailSchema = z.string().trim().email().max(255);
 
-type SessionUserRow = {
+type RequiredEncryptedEmailColumns = {
+  email_encrypted: string;
+  email_iv: string;
+  email_auth_tag: string;
+};
+
+type SessionUserRow = EncryptedDisplayNameColumns &
+  EncryptedEmailColumns & {
   id: string;
-  display_name: string;
-  email: string | null;
   profile_image_url: string | null;
   seller_email_verified_at: Date | null;
   login_id: string | null;
   roles: string[] | string | null;
-};
+  };
+
+type LocalAccountEncryptedRow = EncryptedDisplayNameColumns &
+  EncryptedEmailColumns & {
+  id: string;
+  seller_email_verified_at: Date | null;
+  is_active: boolean;
+  login_id: string;
+  password_hash: string;
+  };
 
 type LocalAccountRow = {
   id: string;
@@ -61,6 +89,15 @@ type LocalAccountRow = {
   password_hash: string;
 };
 
+type PendingSignupEncryptedRow = EncryptedDisplayNameColumns &
+  RequiredEncryptedEmailColumns & {
+  id: string;
+  login_id: string;
+  password_hash: string;
+  verification_code_hash: string;
+  code_expires_at: Date;
+  };
+
 type PendingSignupRow = {
   id: string;
   login_id: string;
@@ -71,6 +108,12 @@ type PendingSignupRow = {
   code_expires_at: Date;
 };
 
+type PendingEmailVerificationEncryptedRow = RequiredEncryptedEmailColumns & {
+  user_id: string;
+  verification_code_hash: string;
+  code_expires_at: Date;
+  };
+
 type PendingEmailVerificationRow = {
   user_id: string;
   email: string;
@@ -78,10 +121,22 @@ type PendingEmailVerificationRow = {
   code_expires_at: Date;
 };
 
+type EmailVerificationIdentityEncryptedRow = EncryptedDisplayNameColumns & {
+  login_id: string | null;
+};
+
 type EmailVerificationIdentityRow = {
   display_name: string;
   login_id: string | null;
 };
+
+type PasswordResetTargetEncryptedRow = EncryptedDisplayNameColumns &
+  EncryptedEmailColumns & {
+  user_id: string;
+  login_id: string | null;
+  has_local_password: boolean;
+  roles: string[] | string | null;
+  };
 
 type PasswordResetTargetRow = {
   user_id: string;
@@ -92,6 +147,12 @@ type PasswordResetTargetRow = {
   roles: string[] | string | null;
 };
 
+type PasswordResetRequestEncryptedRow = RequiredEncryptedEmailColumns & {
+  user_id: string;
+  verification_code_hash: string;
+  code_expires_at: Date;
+  };
+
 type PasswordResetRequestRow = {
   user_id: string;
   email: string;
@@ -99,12 +160,24 @@ type PasswordResetRequestRow = {
   code_expires_at: Date;
 };
 
+type LegacyActivationRequestEncryptedRow = RequiredEncryptedEmailColumns & {
+  user_id: string;
+  verification_code_hash: string;
+  code_expires_at: Date;
+  };
+
 type LegacyActivationRequestRow = {
   user_id: string;
   email: string;
   verification_code_hash: string;
   code_expires_at: Date;
 };
+
+type LegacyActivationTargetEncryptedRow = EncryptedDisplayNameColumns & {
+  user_id: string;
+  login_id: string;
+  has_local_password: boolean;
+  };
 
 type LegacyActivationTargetRow = {
   user_id: string;
@@ -158,12 +231,123 @@ function normalizeRoleList(value: string[] | string | null | undefined) {
 function mapSessionUser(row: SessionUserRow): SessionUser {
   return {
     id: row.id,
-    displayName: row.display_name,
-    email: row.email,
+    displayName: decryptDisplayName(row),
+    email: decryptOptionalEmail(row),
     profileImageUrl: sanitizeProfileImageUrl(row.profile_image_url),
     sellerEmailVerifiedAt: row.seller_email_verified_at ? row.seller_email_verified_at.toISOString() : null,
     threadsUsername: row.login_id,
     roles: normalizeRoleList(row.roles)
+  };
+}
+
+function requireDecryptedEmail(email: string | null, context: string) {
+  if (!email) {
+    throw new Error(`${context} email is missing.`);
+  }
+
+  return email;
+}
+
+function buildEncryptedDisplayNamePayload(displayName: string) {
+  return encryptPiiText(displayName);
+}
+
+function buildEncryptedEmailPayload(email: string) {
+  const encrypted = encryptPiiText(email);
+
+  return {
+    ...encrypted,
+    lookupHash: hashEmailLookup(email)
+  };
+}
+
+function mapLocalAccountRow(row: LocalAccountEncryptedRow): LocalAccountRow {
+  return {
+    id: row.id,
+    display_name: decryptDisplayName(row),
+    email: decryptOptionalEmail(row),
+    seller_email_verified_at: row.seller_email_verified_at,
+    is_active: row.is_active,
+    login_id: row.login_id,
+    password_hash: row.password_hash
+  };
+}
+
+function mapPendingSignupRow(row: PendingSignupEncryptedRow): PendingSignupRow {
+  return {
+    id: row.id,
+    login_id: row.login_id,
+    display_name: decryptDisplayName(row),
+    email: requireDecryptedEmail(decryptOptionalEmail(row), "Pending signup"),
+    password_hash: row.password_hash,
+    verification_code_hash: row.verification_code_hash,
+    code_expires_at: row.code_expires_at
+  };
+}
+
+function mapPendingEmailVerificationRow(
+  row: PendingEmailVerificationEncryptedRow
+): PendingEmailVerificationRow {
+  return {
+    user_id: row.user_id,
+    email: requireDecryptedEmail(decryptOptionalEmail(row), "Pending email verification"),
+    verification_code_hash: row.verification_code_hash,
+    code_expires_at: row.code_expires_at
+  };
+}
+
+function mapEmailVerificationIdentityRow(
+  row: EmailVerificationIdentityEncryptedRow
+): EmailVerificationIdentityRow {
+  return {
+    display_name: decryptDisplayName(row),
+    login_id: row.login_id
+  };
+}
+
+function mapPasswordResetTargetRow(
+  row: PasswordResetTargetEncryptedRow
+): PasswordResetTargetRow {
+  return {
+    user_id: row.user_id,
+    display_name: decryptDisplayName(row),
+    email: decryptOptionalEmail(row),
+    login_id: row.login_id,
+    has_local_password: row.has_local_password,
+    roles: row.roles
+  };
+}
+
+function mapPasswordResetRequestRow(
+  row: PasswordResetRequestEncryptedRow
+): PasswordResetRequestRow {
+  return {
+    user_id: row.user_id,
+    email: requireDecryptedEmail(decryptOptionalEmail(row), "Password reset request"),
+    verification_code_hash: row.verification_code_hash,
+    code_expires_at: row.code_expires_at
+  };
+}
+
+function mapLegacyActivationRequestRow(
+  row: LegacyActivationRequestEncryptedRow
+): LegacyActivationRequestRow {
+  return {
+    user_id: row.user_id,
+    email: requireDecryptedEmail(decryptOptionalEmail(row), "Legacy activation request"),
+    verification_code_hash: row.verification_code_hash,
+    code_expires_at: row.code_expires_at
+  };
+}
+
+function mapLegacyActivationTargetRow(
+  row: LegacyActivationTargetEncryptedRow
+): LegacyActivationTargetRow {
+  return {
+    user_id: row.user_id,
+    display_name: decryptDisplayName(row),
+    login_id: row.login_id,
+    has_local_password: row.has_local_password
   };
 }
 
@@ -405,8 +589,12 @@ async function getUserBySessionHash(sessionHash: string) {
     `
       SELECT
         u.id,
-        u.display_name,
-        u.email,
+        u.display_name_encrypted,
+        u.display_name_iv,
+        u.display_name_auth_tag,
+        u.email_encrypted,
+        u.email_iv,
+        u.email_auth_tag,
         u.profile_image_url,
         u.seller_email_verified_at,
         ${accountLoginIdSql("session_user")} AS login_id,
@@ -435,8 +623,12 @@ async function loadSessionUserById(client: DbClient, userId: string) {
     `
       SELECT
         u.id,
-        u.display_name,
-        u.email,
+        u.display_name_encrypted,
+        u.display_name_iv,
+        u.display_name_auth_tag,
+        u.email_encrypted,
+        u.email_iv,
+        u.email_auth_tag,
         u.profile_image_url,
         u.seller_email_verified_at,
         ${accountLoginIdSql("account")} AS login_id,
@@ -545,25 +737,35 @@ export async function provisionSellerApprovalTotpForLoginId(loginIdInput: string
     );
   }
 
-  const targetResult = await query<{
-    user_id: string;
-    display_name: string;
-    email: string | null;
-    login_id: string | null;
-  }>(
-    `
-      SELECT
-        u.id AS user_id,
-        u.display_name,
-        u.email,
-        ${accountLoginIdSql("account")} AS login_id
-      FROM users u
-      ${accountIdentityJoins("account", "u")}
-      WHERE LOWER(COALESCE(${accountLoginIdSql("account")}, '')) = LOWER($1)
-      GROUP BY u.id, ${accountLoginIdSql("account")}
-      LIMIT 1
-    `,
-    [loginId]
+  const targetResult = await runWithSystemDbContext(() =>
+    query<{
+      user_id: string;
+      display_name_encrypted: string;
+      display_name_iv: string;
+      display_name_auth_tag: string;
+      email_encrypted: string | null;
+      email_iv: string | null;
+      email_auth_tag: string | null;
+      login_id: string | null;
+    }>(
+      `
+        SELECT
+          u.id AS user_id,
+          u.display_name_encrypted,
+          u.display_name_iv,
+          u.display_name_auth_tag,
+          u.email_encrypted,
+          u.email_iv,
+          u.email_auth_tag,
+          ${accountLoginIdSql("account")} AS login_id
+        FROM users u
+        ${accountIdentityJoins("account", "u")}
+        WHERE LOWER(COALESCE(${accountLoginIdSql("account")}, '')) = LOWER($1)
+        GROUP BY u.id, ${accountLoginIdSql("account")}
+        LIMIT 1
+      `,
+      [loginId]
+    )
   );
 
   const target = targetResult.rows[0];
@@ -581,8 +783,8 @@ export async function provisionSellerApprovalTotpForLoginId(loginIdInput: string
   const issuer = env.SELLER_APPROVAL_TOTP_ISSUER.trim();
   const accountName = getSellerApprovalTotpAccountNameFromValues({
     loginId: target.login_id,
-    email: target.email,
-    displayName: target.display_name
+    email: decryptOptionalEmail(target),
+    displayName: decryptDisplayName(target)
   });
 
   await runWithDbContext(
@@ -592,7 +794,12 @@ export async function provisionSellerApprovalTotpForLoginId(loginIdInput: string
     },
     async () =>
       withTransaction(async (client) => {
-        await assignBaseRoles(client, target.user_id, target.login_id as string, target.display_name);
+        await assignBaseRoles(
+          client,
+          target.user_id,
+          target.login_id as string,
+          decryptDisplayName(target)
+        );
         await client.query(
           `
             INSERT INTO seller_approval_admin_totp_credentials (
@@ -905,10 +1112,10 @@ async function isEmailTaken(client: DbClient, email: string) {
     `
       SELECT 1
       FROM users
-      WHERE LOWER(COALESCE(email, '')) = LOWER($1)
+      WHERE email_lookup_hash = $1
       LIMIT 1
     `,
-    [email]
+    [hashEmailLookup(email)]
   );
 
   return Boolean(result.rows[0]);
@@ -984,13 +1191,34 @@ async function createLocalAccount(
     sellerEmailVerifiedAt?: Date | null;
   }
 ) {
+  const encryptedDisplayName = buildEncryptedDisplayNamePayload(input.displayName);
+  const encryptedEmail = input.email ? buildEncryptedEmailPayload(input.email) : null;
   const insertedUser = await client.query<{ id: string }>(
     `
-      INSERT INTO users (display_name, email, seller_email_verified_at, last_login_at)
-      VALUES ($1, $2, $3, NOW())
+      INSERT INTO users (
+        display_name_encrypted,
+        display_name_iv,
+        display_name_auth_tag,
+        email_encrypted,
+        email_iv,
+        email_auth_tag,
+        email_lookup_hash,
+        seller_email_verified_at,
+        last_login_at
+      )
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NOW())
       RETURNING id
     `,
-    [input.displayName, input.email ?? null, input.sellerEmailVerifiedAt ?? null]
+    [
+      encryptedDisplayName.encrypted,
+      encryptedDisplayName.iv,
+      encryptedDisplayName.authTag,
+      encryptedEmail?.encrypted ?? null,
+      encryptedEmail?.iv ?? null,
+      encryptedEmail?.authTag ?? null,
+      encryptedEmail?.lookupHash ?? null,
+      input.sellerEmailVerifiedAt ?? null
+    ]
   );
 
   const userId = insertedUser.rows[0]?.id;
@@ -1016,11 +1244,11 @@ async function ensureEmailAvailableForUser(client: DbClient, userId: string, ema
     `
       SELECT 1
       FROM users
-      WHERE LOWER(COALESCE(email, '')) = LOWER($1)
+      WHERE email_lookup_hash = $1
         AND id <> $2
       LIMIT 1
     `,
-    [email, userId]
+    [hashEmailLookup(email), userId]
   );
 
   if (result.rows[0]) {
@@ -1029,10 +1257,12 @@ async function ensureEmailAvailableForUser(client: DbClient, userId: string, ema
 }
 
 async function loadEmailVerificationIdentity(client: DbClient, userId: string) {
-  const result = await client.query<EmailVerificationIdentityRow>(
+  const result = await client.query<EmailVerificationIdentityEncryptedRow>(
     `
       SELECT
-        u.display_name,
+        u.display_name_encrypted,
+        u.display_name_iv,
+        u.display_name_auth_tag,
         ${accountLoginIdSql("account")} AS login_id
       FROM users u
       ${accountIdentityJoins("account", "u")}
@@ -1048,16 +1278,20 @@ async function loadEmailVerificationIdentity(client: DbClient, userId: string) {
     throw new AppError("로그인 사용자 정보를 불러오지 못했습니다.", 404);
   }
 
-  return row;
+  return mapEmailVerificationIdentityRow(row);
 }
 
 async function findPasswordResetTarget(client: DbClient, loginId: string) {
-  const result = await client.query<PasswordResetTargetRow>(
+  const result = await client.query<PasswordResetTargetEncryptedRow>(
     `
       SELECT
         u.id AS user_id,
-        u.display_name,
-        u.email,
+        u.display_name_encrypted,
+        u.display_name_iv,
+        u.display_name_auth_tag,
+        u.email_encrypted,
+        u.email_iv,
+        u.email_auth_tag,
         ${accountLoginIdSql("account")} AS login_id,
         (account_local.user_id IS NOT NULL) AS has_local_password,
         COALESCE(ARRAY_AGG(DISTINCT ur.role::text) FILTER (WHERE ur.role IS NOT NULL), '{}') AS roles
@@ -1072,7 +1306,7 @@ async function findPasswordResetTarget(client: DbClient, loginId: string) {
     [loginId]
   );
 
-  return result.rows[0] ?? null;
+  return result.rows[0] ? mapPasswordResetTargetRow(result.rows[0]) : null;
 }
 
 function assertBuyerActivationTarget(target: PasswordResetTargetRow | null) {
@@ -1112,11 +1346,13 @@ async function ensureBuyerActivationEmail(
 }
 
 async function findLegacyActivationTarget(client: DbClient, loginId: string) {
-  const result = await client.query<LegacyActivationTargetRow>(
+  const result = await client.query<LegacyActivationTargetEncryptedRow>(
     `
       SELECT
         u.id AS user_id,
-        u.display_name,
+        u.display_name_encrypted,
+        u.display_name_iv,
+        u.display_name_auth_tag,
         aa.provider_username AS login_id,
         (lac.user_id IS NOT NULL) AS has_local_password
       FROM users u
@@ -1131,7 +1367,7 @@ async function findLegacyActivationTarget(client: DbClient, loginId: string) {
     [loginId]
   );
 
-  return result.rows[0] ?? null;
+  return result.rows[0] ? mapLegacyActivationTargetRow(result.rows[0]) : null;
 }
 
 async function upsertLocalPassword(
@@ -1186,7 +1422,7 @@ export async function registerBuyerAccount(input: {
   const passwordHash = await hashPassword(input.password);
 
   try {
-    return await withTransaction(async (client) => {
+    return await runWithSystemDbContext(() => withTransaction(async (client) => {
       await ensureSignupAvailability(client, loginId, email);
       const userId = await createLocalAccount(client, {
         loginId,
@@ -1196,7 +1432,7 @@ export async function registerBuyerAccount(input: {
       });
 
       return createSessionForUserId(client, userId);
-    });
+    }));
   } catch (error) {
     if (isPgUniqueError(error)) {
       throw new AppError("이미 가입이 완료된 계정입니다. 로그인해 주세요.", 409);
@@ -1224,32 +1460,51 @@ export async function requestSignupVerification(input: {
   const verificationCode = generateVerificationCode();
   const verificationCodeHash = hashVerificationCode(verificationCode);
   const expiresAt = new Date(Date.now() + env.SIGNUP_VERIFICATION_CODE_TTL_MINUTES * 60 * 1000);
+  const encryptedDisplayName = buildEncryptedDisplayNamePayload(displayName);
+  const encryptedEmail = buildEncryptedEmailPayload(email);
 
-  await withTransaction(async (client) => {
+  await runWithSystemDbContext(() => withTransaction(async (client) => {
     await client.query("DELETE FROM signup_verification_requests WHERE code_expires_at < NOW()");
     await ensureSignupAvailability(client, loginId, email);
     await client.query(
       `
         DELETE FROM signup_verification_requests
-        WHERE login_id = $1 OR email = $2
+        WHERE login_id = $1 OR email_lookup_hash = $2
       `,
-      [loginId, email]
+      [loginId, encryptedEmail.lookupHash]
     );
     await client.query(
       `
         INSERT INTO signup_verification_requests (
           login_id,
-          display_name,
-          email,
+          display_name_encrypted,
+          display_name_iv,
+          display_name_auth_tag,
+          email_encrypted,
+          email_iv,
+          email_auth_tag,
+          email_lookup_hash,
           password_hash,
           verification_code_hash,
           code_expires_at
         )
-        VALUES ($1, $2, $3, $4, $5, $6)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
       `,
-      [loginId, displayName, email, passwordHash, verificationCodeHash, expiresAt]
+      [
+        loginId,
+        encryptedDisplayName.encrypted,
+        encryptedDisplayName.iv,
+        encryptedDisplayName.authTag,
+        encryptedEmail.encrypted,
+        encryptedEmail.iv,
+        encryptedEmail.authTag,
+        encryptedEmail.lookupHash,
+        passwordHash,
+        verificationCodeHash,
+        expiresAt
+      ]
     );
-  });
+  }));
 
   await sendSignupVerificationCode({
     email,
@@ -1269,25 +1524,29 @@ export async function verifySignupCode(input: {
   const code = normalizeVerificationCode(input.code);
 
   try {
-    return await withTransaction(async (client) => {
-      const pendingResult = await client.query<PendingSignupRow>(
+    return await runWithSystemDbContext(() => withTransaction(async (client) => {
+      const pendingResult = await client.query<PendingSignupEncryptedRow>(
         `
           SELECT
             id,
             login_id,
-            display_name,
-            email,
+            display_name_encrypted,
+            display_name_iv,
+            display_name_auth_tag,
+            email_encrypted,
+            email_iv,
+            email_auth_tag,
             password_hash,
             verification_code_hash,
             code_expires_at
           FROM signup_verification_requests
-          WHERE login_id = $1 AND email = $2
+          WHERE login_id = $1 AND email_lookup_hash = $2
           FOR UPDATE
         `,
-        [loginId, email]
+        [loginId, hashEmailLookup(email)]
       );
 
-      const pending = pendingResult.rows[0];
+      const pending = pendingResult.rows[0] ? mapPendingSignupRow(pendingResult.rows[0]) : null;
 
       if (!pending) {
         throw new AppError("인증번호 요청 내역을 찾을 수 없습니다. 다시 인증번호를 요청해 주세요.", 404);
@@ -1313,7 +1572,7 @@ export async function verifySignupCode(input: {
       await client.query("DELETE FROM signup_verification_requests WHERE id = $1", [pending.id]);
 
       return createSessionForUserId(client, userId);
-    });
+    }));
   } catch (error) {
     if (isPgUniqueError(error)) {
       throw new AppError("이미 가입이 완료된 계정입니다. 로그인해 주세요.", 409);
@@ -1328,6 +1587,7 @@ export async function requestSellerEmailVerification(userId: string, input: { em
   const verificationCode = generateVerificationCode();
   const verificationCodeHash = hashVerificationCode(verificationCode);
   const expiresAt = new Date(Date.now() + env.SIGNUP_VERIFICATION_CODE_TTL_MINUTES * 60 * 1000);
+  const encryptedEmail = buildEncryptedEmailPayload(email);
 
   const identity = await withTransaction(async (client) => {
     await client.query("DELETE FROM seller_email_verification_requests WHERE code_expires_at < NOW()");
@@ -1339,19 +1599,30 @@ export async function requestSellerEmailVerification(userId: string, input: { em
       `
         INSERT INTO seller_email_verification_requests (
           user_id,
-          email,
+          email_encrypted,
+          email_iv,
+          email_auth_tag,
           verification_code_hash,
           code_expires_at,
           updated_at
         )
-        VALUES ($1, $2, $3, $4, NOW())
+        VALUES ($1, $2, $3, $4, $5, $6, NOW())
         ON CONFLICT (user_id) DO UPDATE
-        SET email = EXCLUDED.email,
+        SET email_encrypted = EXCLUDED.email_encrypted,
+            email_iv = EXCLUDED.email_iv,
+            email_auth_tag = EXCLUDED.email_auth_tag,
             verification_code_hash = EXCLUDED.verification_code_hash,
             code_expires_at = EXCLUDED.code_expires_at,
             updated_at = NOW()
       `,
-      [userId, email, verificationCodeHash, expiresAt]
+      [
+        userId,
+        encryptedEmail.encrypted,
+        encryptedEmail.iv,
+        encryptedEmail.authTag,
+        verificationCodeHash,
+        expiresAt
+      ]
     );
 
     return currentUser;
@@ -1370,6 +1641,7 @@ export async function requestBuyerEmailVerification(userId: string, input: { ema
   const verificationCode = generateVerificationCode();
   const verificationCodeHash = hashVerificationCode(verificationCode);
   const expiresAt = new Date(Date.now() + env.SIGNUP_VERIFICATION_CODE_TTL_MINUTES * 60 * 1000);
+  const encryptedEmail = buildEncryptedEmailPayload(email);
 
   const identity = await withTransaction(async (client) => {
     await client.query("DELETE FROM seller_email_verification_requests WHERE code_expires_at < NOW()");
@@ -1381,19 +1653,30 @@ export async function requestBuyerEmailVerification(userId: string, input: { ema
       `
         INSERT INTO seller_email_verification_requests (
           user_id,
-          email,
+          email_encrypted,
+          email_iv,
+          email_auth_tag,
           verification_code_hash,
           code_expires_at,
           updated_at
         )
-        VALUES ($1, $2, $3, $4, NOW())
+        VALUES ($1, $2, $3, $4, $5, $6, NOW())
         ON CONFLICT (user_id) DO UPDATE
-        SET email = EXCLUDED.email,
+        SET email_encrypted = EXCLUDED.email_encrypted,
+            email_iv = EXCLUDED.email_iv,
+            email_auth_tag = EXCLUDED.email_auth_tag,
             verification_code_hash = EXCLUDED.verification_code_hash,
             code_expires_at = EXCLUDED.code_expires_at,
             updated_at = NOW()
       `,
-      [userId, email, verificationCodeHash, expiresAt]
+      [
+        userId,
+        encryptedEmail.encrypted,
+        encryptedEmail.iv,
+        encryptedEmail.authTag,
+        verificationCodeHash,
+        expiresAt
+      ]
     );
 
     return currentUser;
@@ -1419,8 +1702,9 @@ export async function requestBuyerAccountActivation(input: {
   const verificationCode = generateVerificationCode();
   const verificationCodeHash = hashVerificationCode(verificationCode);
   const expiresAt = new Date(Date.now() + env.SIGNUP_VERIFICATION_CODE_TTL_MINUTES * 60 * 1000);
+  const encryptedEmail = buildEncryptedEmailPayload(email);
 
-  const deliverable = await withTransaction(async (client) => {
+  const deliverable = await runWithSystemDbContext(() => withTransaction(async (client) => {
     await client.query("DELETE FROM password_reset_requests WHERE code_expires_at < NOW()");
 
     const target = assertBuyerActivationTarget(await findPasswordResetTarget(client, loginId));
@@ -1430,19 +1714,30 @@ export async function requestBuyerAccountActivation(input: {
       `
         INSERT INTO password_reset_requests (
           user_id,
-          email,
+          email_encrypted,
+          email_iv,
+          email_auth_tag,
           verification_code_hash,
           code_expires_at,
           updated_at
         )
-        VALUES ($1, $2, $3, $4, NOW())
+        VALUES ($1, $2, $3, $4, $5, $6, NOW())
         ON CONFLICT (user_id) DO UPDATE
-        SET email = EXCLUDED.email,
+        SET email_encrypted = EXCLUDED.email_encrypted,
+            email_iv = EXCLUDED.email_iv,
+            email_auth_tag = EXCLUDED.email_auth_tag,
             verification_code_hash = EXCLUDED.verification_code_hash,
             code_expires_at = EXCLUDED.code_expires_at,
             updated_at = NOW()
       `,
-      [target.user_id, email, verificationCodeHash, expiresAt]
+      [
+        target.user_id,
+        encryptedEmail.encrypted,
+        encryptedEmail.iv,
+        encryptedEmail.authTag,
+        verificationCodeHash,
+        expiresAt
+      ]
     );
 
     return {
@@ -1451,7 +1746,7 @@ export async function requestBuyerAccountActivation(input: {
       displayName: target.display_name,
       code: verificationCode
     };
-  });
+  }));
 
   await sendBuyerAccountActivationCode(deliverable);
 }
@@ -1460,12 +1755,14 @@ export async function verifySellerEmailVerification(userId: string, input: { cod
   const code = normalizeVerificationCode(input.code);
 
   try {
-    return await withTransaction(async (client) => {
-      const pendingResult = await client.query<PendingEmailVerificationRow>(
+    return await runWithSystemDbContext(() => withTransaction(async (client) => {
+      const pendingResult = await client.query<PendingEmailVerificationEncryptedRow>(
         `
           SELECT
             user_id,
-            email,
+            email_encrypted,
+            email_iv,
+            email_auth_tag,
             verification_code_hash,
             code_expires_at
           FROM seller_email_verification_requests
@@ -1475,7 +1772,9 @@ export async function verifySellerEmailVerification(userId: string, input: { cod
         [userId]
       );
 
-      const pending = pendingResult.rows[0];
+      const pending = pendingResult.rows[0]
+        ? mapPendingEmailVerificationRow(pendingResult.rows[0])
+        : null;
 
       if (!pending) {
         throw new AppError("인증번호 요청 내역을 찾을 수 없습니다. 다시 인증번호를 요청해 주세요.", 404);
@@ -1491,20 +1790,24 @@ export async function verifySellerEmailVerification(userId: string, input: { cod
       }
 
       await ensureEmailAvailableForUser(client, userId, pending.email);
+      const nextEmail = buildEncryptedEmailPayload(pending.email);
       await client.query(
         `
           UPDATE users
-          SET email = $2,
+          SET email_encrypted = $2,
+              email_iv = $3,
+              email_auth_tag = $4,
+              email_lookup_hash = $5,
               seller_email_verified_at = NOW(),
               updated_at = NOW()
           WHERE id = $1
         `,
-        [userId, pending.email]
+        [userId, nextEmail.encrypted, nextEmail.iv, nextEmail.authTag, nextEmail.lookupHash]
       );
       await client.query("DELETE FROM seller_email_verification_requests WHERE user_id = $1", [userId]);
 
       return loadSessionUserById(client, userId);
-    });
+    }));
   } catch (error) {
     if (isPgUniqueError(error)) {
       throw new AppError("이미 가입한 이메일입니다.", 409, "EMAIL_ALREADY_EXISTS");
@@ -1530,14 +1833,16 @@ export async function verifyBuyerAccountActivation(input: {
 
   const passwordHash = await hashPassword(input.newPassword);
 
-  return withTransaction(async (client) => {
+  return runWithSystemDbContext(() => withTransaction(async (client) => {
     const target = assertBuyerActivationTarget(await findPasswordResetTarget(client, loginId));
     await ensureBuyerActivationEmail(client, target, email);
-    const pendingResult = await client.query<PasswordResetRequestRow>(
+    const pendingResult = await client.query<PasswordResetRequestEncryptedRow>(
       `
         SELECT
           user_id,
-          email,
+          email_encrypted,
+          email_iv,
+          email_auth_tag,
           verification_code_hash,
           code_expires_at
         FROM password_reset_requests
@@ -1547,7 +1852,7 @@ export async function verifyBuyerAccountActivation(input: {
       [target.user_id]
     );
 
-    const pending = pendingResult.rows[0];
+    const pending = pendingResult.rows[0] ? mapPasswordResetRequestRow(pendingResult.rows[0]) : null;
 
     if (!pending || pending.email.toLowerCase() !== email) {
       throw new AppError(
@@ -1566,6 +1871,7 @@ export async function verifyBuyerAccountActivation(input: {
       throw new AppError("인증번호가 올바르지 않습니다.", 400, "INVALID_VERIFICATION_CODE");
     }
 
+    const nextEmail = buildEncryptedEmailPayload(email);
     await upsertLocalPassword(client, {
       userId: target.user_id,
       loginId,
@@ -1575,28 +1881,33 @@ export async function verifyBuyerAccountActivation(input: {
     await client.query(
       `
         UPDATE users
-        SET email = $2,
+        SET email_encrypted = $2,
+            email_iv = $3,
+            email_auth_tag = $4,
+            email_lookup_hash = $5,
             updated_at = NOW()
         WHERE id = $1
       `,
-      [target.user_id, email]
+      [target.user_id, nextEmail.encrypted, nextEmail.iv, nextEmail.authTag, nextEmail.lookupHash]
     );
     await client.query("DELETE FROM password_reset_requests WHERE user_id = $1", [target.user_id]);
 
     return createSessionForUserId(client, target.user_id);
-  });
+  }));
 }
 
 export async function verifyBuyerEmailVerification(userId: string, input: { code: string }) {
   const code = normalizeVerificationCode(input.code);
 
   try {
-    return await withTransaction(async (client) => {
-      const pendingResult = await client.query<PendingEmailVerificationRow>(
+    return await runWithSystemDbContext(() => withTransaction(async (client) => {
+      const pendingResult = await client.query<PendingEmailVerificationEncryptedRow>(
         `
           SELECT
             user_id,
-            email,
+            email_encrypted,
+            email_iv,
+            email_auth_tag,
             verification_code_hash,
             code_expires_at
           FROM seller_email_verification_requests
@@ -1606,7 +1917,9 @@ export async function verifyBuyerEmailVerification(userId: string, input: { code
         [userId]
       );
 
-      const pending = pendingResult.rows[0];
+      const pending = pendingResult.rows[0]
+        ? mapPendingEmailVerificationRow(pendingResult.rows[0])
+        : null;
 
       if (!pending) {
         throw new AppError("인증번호 요청 내역을 찾을 수 없습니다. 다시 인증번호를 요청해 주세요.", 404);
@@ -1622,19 +1935,23 @@ export async function verifyBuyerEmailVerification(userId: string, input: { code
       }
 
       await ensureEmailAvailableForUser(client, userId, pending.email);
+      const nextEmail = buildEncryptedEmailPayload(pending.email);
       await client.query(
         `
           UPDATE users
-          SET email = $2,
+          SET email_encrypted = $2,
+              email_iv = $3,
+              email_auth_tag = $4,
+              email_lookup_hash = $5,
               updated_at = NOW()
           WHERE id = $1
         `,
-        [userId, pending.email]
+        [userId, nextEmail.encrypted, nextEmail.iv, nextEmail.authTag, nextEmail.lookupHash]
       );
       await client.query("DELETE FROM seller_email_verification_requests WHERE user_id = $1", [userId]);
 
       return loadSessionUserById(client, userId);
-    });
+    }));
   } catch (error) {
     if (isPgUniqueError(error)) {
       throw new AppError("이미 가입한 이메일입니다.", 409, "EMAIL_ALREADY_EXISTS");
@@ -1655,8 +1972,9 @@ export async function requestPasswordReset(input: {
   const verificationCode = generateVerificationCode();
   const verificationCodeHash = hashVerificationCode(verificationCode);
   const expiresAt = new Date(Date.now() + env.SIGNUP_VERIFICATION_CODE_TTL_MINUTES * 60 * 1000);
+  const encryptedEmail = buildEncryptedEmailPayload(email);
 
-  const deliverable = await withTransaction(async (client) => {
+  const deliverable = await runWithSystemDbContext(() => withTransaction(async (client) => {
     await client.query("DELETE FROM password_reset_requests WHERE code_expires_at < NOW()");
 
     const target = await findPasswordResetTarget(client, loginId);
@@ -1688,19 +2006,30 @@ export async function requestPasswordReset(input: {
       `
         INSERT INTO password_reset_requests (
           user_id,
-          email,
+          email_encrypted,
+          email_iv,
+          email_auth_tag,
           verification_code_hash,
           code_expires_at,
           updated_at
         )
-        VALUES ($1, $2, $3, $4, NOW())
+        VALUES ($1, $2, $3, $4, $5, $6, NOW())
         ON CONFLICT (user_id) DO UPDATE
-        SET email = EXCLUDED.email,
+        SET email_encrypted = EXCLUDED.email_encrypted,
+            email_iv = EXCLUDED.email_iv,
+            email_auth_tag = EXCLUDED.email_auth_tag,
             verification_code_hash = EXCLUDED.verification_code_hash,
             code_expires_at = EXCLUDED.code_expires_at,
             updated_at = NOW()
       `,
-      [target.user_id, email, verificationCodeHash, expiresAt]
+      [
+        target.user_id,
+        encryptedEmail.encrypted,
+        encryptedEmail.iv,
+        encryptedEmail.authTag,
+        verificationCodeHash,
+        expiresAt
+      ]
     );
 
     return {
@@ -1709,7 +2038,7 @@ export async function requestPasswordReset(input: {
       displayName: target.display_name,
       code: verificationCode
     };
-  });
+  }));
 
   if (!deliverable) {
     return;
@@ -1730,8 +2059,9 @@ export async function requestLegacyAccountActivation(input: {
   const verificationCode = generateVerificationCode();
   const verificationCodeHash = hashVerificationCode(verificationCode);
   const expiresAt = new Date(Date.now() + env.SIGNUP_VERIFICATION_CODE_TTL_MINUTES * 60 * 1000);
+  const encryptedEmail = buildEncryptedEmailPayload(email);
 
-  const deliverable = await withTransaction(async (client) => {
+  const deliverable = await runWithSystemDbContext(() => withTransaction(async (client) => {
     await client.query("DELETE FROM legacy_account_activation_requests WHERE code_expires_at < NOW()");
     const target = await findLegacyActivationTarget(client, loginId);
 
@@ -1756,19 +2086,30 @@ export async function requestLegacyAccountActivation(input: {
       `
         INSERT INTO legacy_account_activation_requests (
           user_id,
-          email,
+          email_encrypted,
+          email_iv,
+          email_auth_tag,
           verification_code_hash,
           code_expires_at,
           updated_at
         )
-        VALUES ($1, $2, $3, $4, NOW())
+        VALUES ($1, $2, $3, $4, $5, $6, NOW())
         ON CONFLICT (user_id) DO UPDATE
-        SET email = EXCLUDED.email,
+        SET email_encrypted = EXCLUDED.email_encrypted,
+            email_iv = EXCLUDED.email_iv,
+            email_auth_tag = EXCLUDED.email_auth_tag,
             verification_code_hash = EXCLUDED.verification_code_hash,
             code_expires_at = EXCLUDED.code_expires_at,
             updated_at = NOW()
       `,
-      [target.user_id, email, verificationCodeHash, expiresAt]
+      [
+        target.user_id,
+        encryptedEmail.encrypted,
+        encryptedEmail.iv,
+        encryptedEmail.authTag,
+        verificationCodeHash,
+        expiresAt
+      ]
     );
 
     return {
@@ -1777,7 +2118,7 @@ export async function requestLegacyAccountActivation(input: {
       displayName: target.display_name,
       code: verificationCode
     };
-  });
+  }));
 
   await sendLegacyAccountActivationCode(deliverable);
 }
@@ -1798,7 +2139,7 @@ export async function verifyLegacyAccountActivation(input: {
 
   const passwordHash = await hashPassword(input.newPassword);
 
-  return withTransaction(async (client) => {
+  return runWithSystemDbContext(() => withTransaction(async (client) => {
     const target = await findLegacyActivationTarget(client, loginId);
 
     if (!target) {
@@ -1817,11 +2158,13 @@ export async function verifyLegacyAccountActivation(input: {
       );
     }
 
-    const pendingResult = await client.query<LegacyActivationRequestRow>(
+    const pendingResult = await client.query<LegacyActivationRequestEncryptedRow>(
       `
         SELECT
           user_id,
-          email,
+          email_encrypted,
+          email_iv,
+          email_auth_tag,
           verification_code_hash,
           code_expires_at
         FROM legacy_account_activation_requests
@@ -1831,7 +2174,9 @@ export async function verifyLegacyAccountActivation(input: {
       [target.user_id]
     );
 
-    const pending = pendingResult.rows[0];
+    const pending = pendingResult.rows[0]
+      ? mapLegacyActivationRequestRow(pendingResult.rows[0])
+      : null;
 
     if (!pending || pending.email.toLowerCase() !== email) {
       throw new AppError(
@@ -1852,6 +2197,7 @@ export async function verifyLegacyAccountActivation(input: {
       throw new AppError("인증번호가 올바르지 않습니다.", 400, "INVALID_VERIFICATION_CODE");
     }
 
+    const nextEmail = buildEncryptedEmailPayload(email);
     await ensureEmailAvailableForUser(client, target.user_id, email);
     await upsertLocalPassword(client, {
       userId: target.user_id,
@@ -1862,12 +2208,15 @@ export async function verifyLegacyAccountActivation(input: {
     await client.query(
       `
         UPDATE users
-        SET email = $2,
+        SET email_encrypted = $2,
+            email_iv = $3,
+            email_auth_tag = $4,
+            email_lookup_hash = $5,
             seller_email_verified_at = COALESCE(seller_email_verified_at, NOW()),
             updated_at = NOW()
         WHERE id = $1
       `,
-      [target.user_id, email]
+      [target.user_id, nextEmail.encrypted, nextEmail.iv, nextEmail.authTag, nextEmail.lookupHash]
     );
     await client.query("DELETE FROM password_reset_requests WHERE user_id = $1", [target.user_id]);
     await client.query("DELETE FROM seller_email_verification_requests WHERE user_id = $1", [
@@ -1883,7 +2232,7 @@ export async function verifyLegacyAccountActivation(input: {
     });
 
     return createSessionForUserId(client, target.user_id);
-  });
+  }));
 }
 
 export async function verifyPasswordReset(input: {
@@ -1904,7 +2253,7 @@ export async function verifyPasswordReset(input: {
 
   const passwordHash = await hashPassword(input.newPassword);
 
-  return withTransaction(async (client) => {
+  return runWithSystemDbContext(() => withTransaction(async (client) => {
     const target = await findPasswordResetTarget(client, loginId);
 
     if (!target) {
@@ -1920,11 +2269,13 @@ export async function verifyPasswordReset(input: {
       throw new AppError("비밀번호 재설정 요청을 찾을 수 없습니다. 다시 시도해 주세요.", 404);
     }
 
-    const pendingResult = await client.query<PasswordResetRequestRow>(
+    const pendingResult = await client.query<PasswordResetRequestEncryptedRow>(
       `
         SELECT
           user_id,
-          email,
+          email_encrypted,
+          email_iv,
+          email_auth_tag,
           verification_code_hash,
           code_expires_at
         FROM password_reset_requests
@@ -1934,7 +2285,7 @@ export async function verifyPasswordReset(input: {
       [target.user_id]
     );
 
-    const pending = pendingResult.rows[0];
+    const pending = pendingResult.rows[0] ? mapPasswordResetRequestRow(pendingResult.rows[0]) : null;
 
     if (!pending || pending.email.toLowerCase() !== email) {
       throw new AppError("비밀번호 재설정 요청을 찾을 수 없습니다. 다시 시도해 주세요.", 404);
@@ -1949,6 +2300,7 @@ export async function verifyPasswordReset(input: {
       throw new AppError("인증번호가 올바르지 않습니다.", 400, "INVALID_VERIFICATION_CODE");
     }
 
+    const nextEmail = buildEncryptedEmailPayload(email);
     await upsertLocalPassword(client, {
       userId: target.user_id,
       loginId,
@@ -1958,15 +2310,25 @@ export async function verifyPasswordReset(input: {
     await client.query(
       `
         UPDATE users
-        SET email = $2,
+        SET email_encrypted = $2,
+            email_iv = $3,
+            email_auth_tag = $4,
+            email_lookup_hash = $5,
             seller_email_verified_at = CASE
-              WHEN $3 THEN COALESCE(seller_email_verified_at, NOW())
+              WHEN $6 THEN COALESCE(seller_email_verified_at, NOW())
               ELSE seller_email_verified_at
             END,
             updated_at = NOW()
         WHERE id = $1
       `,
-      [target.user_id, email, portal === "ADMIN"]
+      [
+        target.user_id,
+        nextEmail.encrypted,
+        nextEmail.iv,
+        nextEmail.authTag,
+        nextEmail.lookupHash,
+        portal === "ADMIN"
+      ]
     );
     await client.query("DELETE FROM password_reset_requests WHERE user_id = $1", [target.user_id]);
 
@@ -1979,7 +2341,7 @@ export async function verifyPasswordReset(input: {
     }
 
     return createSessionForUserId(client, target.user_id);
-  });
+  }));
 }
 
 export async function loginWithPassword(input: { loginId: string; password: string }) {
@@ -1989,13 +2351,17 @@ export async function loginWithPassword(input: { loginId: string; password: stri
     throw new AppError("비밀번호를 입력해 주세요.", 400);
   }
 
-  return withTransaction(async (client) => {
-    const accountResult = await client.query<LocalAccountRow>(
+  return runWithSystemDbContext(() => withTransaction(async (client) => {
+    const accountResult = await client.query<LocalAccountEncryptedRow>(
       `
         SELECT
           u.id,
-          u.display_name,
-          u.email,
+          u.display_name_encrypted,
+          u.display_name_iv,
+          u.display_name_auth_tag,
+          u.email_encrypted,
+          u.email_iv,
+          u.email_auth_tag,
           u.seller_email_verified_at,
           u.is_active,
           lac.login_id,
@@ -2008,7 +2374,7 @@ export async function loginWithPassword(input: { loginId: string; password: stri
       [loginId]
     );
 
-    const account = accountResult.rows[0];
+    const account = accountResult.rows[0] ? mapLocalAccountRow(accountResult.rows[0]) : null;
 
     if (!account) {
       throw new AppError("아이디 또는 비밀번호가 올바르지 않습니다.", 401, "INVALID_LOGIN");
@@ -2026,7 +2392,7 @@ export async function loginWithPassword(input: { loginId: string; password: stri
 
     await syncAutoAdminRoles(client, account);
     return createSessionForUserId(client, account.id);
-  });
+  }));
 }
 
 export async function getSessionUser(sessionToken?: string) {
@@ -2034,13 +2400,13 @@ export async function getSessionUser(sessionToken?: string) {
     return null;
   }
 
-  return getUserBySessionHash(hashSessionToken(sessionToken));
+  return runWithSystemDbContext(() => getUserBySessionHash(hashSessionToken(sessionToken)));
 }
 
 export async function updateProfileImage(userId: string, rawProfileImageUrl: string | null) {
   const profileImageUrl = normalizeProfileImageUrl(rawProfileImageUrl);
 
-  return withTransaction(async (client) => {
+  return runWithSystemDbContext(() => withTransaction(async (client) => {
     const result = await client.query<{ id: string }>(
       `
         UPDATE users
@@ -2057,7 +2423,7 @@ export async function updateProfileImage(userId: string, rawProfileImageUrl: str
     }
 
     return loadSessionUserById(client, userId);
-  });
+  }));
 }
 
 export function setSessionCookie(response: Response, sessionToken: string, expiresAt: Date) {
@@ -2098,7 +2464,7 @@ export async function logout(sessionToken?: string) {
     return;
   }
 
-  await query(
+  await runWithSystemDbContext(() => query(
     `
       UPDATE user_sessions
       SET revoked_at = NOW(),
@@ -2106,7 +2472,7 @@ export async function logout(sessionToken?: string) {
       WHERE session_token_hash = $1
     `,
     [hashSessionToken(sessionToken)]
-  );
+  ));
 }
 
 export function clearSessionCookie(response: Response) {

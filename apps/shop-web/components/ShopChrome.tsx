@@ -160,7 +160,7 @@ export function ShopChrome({ children }: { children: React.ReactNode }) {
     <div className="flex min-h-screen flex-col bg-[var(--buyer-canvas)] text-[var(--buyer-ink)]">
       <header className="sticky top-0 z-30 border-b border-[var(--buyer-border)] bg-white/90 backdrop-blur">
         <div className="safe-area-top safe-area-inline">
-          <div className="mx-auto flex max-w-6xl items-center justify-between gap-4 px-4 py-3.5 sm:px-6 sm:py-4">
+          <div className="mx-auto flex max-w-6xl items-center justify-between gap-4 px-5 py-3.5 sm:px-7 sm:py-4">
             <div className="min-w-0 space-y-1.5">
               <p className="text-[10px] font-semibold uppercase tracking-[0.22em] text-[var(--buyer-primary)] sm:text-xs">
                 Jinmarket Buyer
@@ -211,7 +211,7 @@ export function ShopChrome({ children }: { children: React.ReactNode }) {
           role="dialog"
         >
           <div className="safe-area-top safe-area-bottom safe-area-inline flex min-h-full flex-col">
-            <div className="mx-auto flex w-full max-w-6xl flex-1 flex-col px-4 py-4 sm:px-6 sm:py-6">
+            <div className="mx-auto flex w-full max-w-6xl flex-1 flex-col px-5 py-4 sm:px-7 sm:py-6">
               <div className="flex items-start justify-between gap-4">
                 <div className="space-y-2">
                   <div className="space-y-1">
@@ -327,8 +327,14 @@ export function ShopChrome({ children }: { children: React.ReactNode }) {
               <div className="mt-auto pt-6">
                 <div className="mb-4 h-px bg-[var(--buyer-border)]" />
                 <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center">
-                  <PwaInstallPrompt />
-                  <PushNotificationPrompt app="SHOP" isLoggedIn={Boolean(user)} />
+                  <PwaInstallPrompt
+                    className="min-h-11 px-4"
+                    showDismissButton={false}
+                  />
+                  <PushNotificationPrompt
+                    app="SHOP"
+                    isLoggedIn={Boolean(user)}
+                  />
                   <a
                     className="inline-flex min-h-11 items-center justify-center rounded-xl border border-[var(--buyer-border)] bg-white px-4 text-[13px] font-semibold text-[var(--buyer-dark)] shadow-sm transition hover:bg-[var(--buyer-softest)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--buyer-accent)] focus-visible:ring-offset-2 sm:text-sm"
                     href={adminAppUrl}
@@ -356,38 +362,18 @@ export function ShopChrome({ children }: { children: React.ReactNode }) {
                     </LinkButton>
                   )}
                 </div>
-                <div className="mt-4 flex flex-wrap gap-2">
-                  <Link
-                    className="inline-flex min-h-10 items-center justify-center rounded-full border border-[var(--buyer-border)] bg-[var(--buyer-softest)] px-3.5 text-sm font-medium text-[var(--buyer-dark)] transition hover:bg-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--buyer-accent)] focus-visible:ring-offset-2"
-                    href="/privacy"
-                  >
-                    개인정보처리방침
-                  </Link>
-                  <Link
-                    className="inline-flex min-h-10 items-center justify-center rounded-full border border-[var(--buyer-border)] bg-[var(--buyer-softest)] px-3.5 text-sm font-medium text-[var(--buyer-dark)] transition hover:bg-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--buyer-accent)] focus-visible:ring-offset-2"
-                    href="/terms"
-                  >
-                    이용약관
-                  </Link>
-                  <Link
-                    className="inline-flex min-h-10 items-center justify-center rounded-full border border-[var(--buyer-border)] bg-[var(--buyer-softest)] px-3.5 text-sm font-medium text-[var(--buyer-dark)] transition hover:bg-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--buyer-accent)] focus-visible:ring-offset-2"
-                    href="/data-deletion"
-                  >
-                    데이터 삭제 안내
-                  </Link>
-                </div>
               </div>
             </div>
           </div>
         </div>
       </div>
 
-      <main className="safe-area-inline mx-auto w-full max-w-6xl flex-1 px-4 py-5 sm:px-6 sm:py-8">
+      <main className="safe-area-inline mx-auto w-full max-w-6xl flex-1 px-5 py-5 sm:px-7 sm:py-8">
         {children}
       </main>
 
       <footer className="safe-area-bottom safe-area-inline border-t border-[var(--buyer-border)] bg-white/95">
-        <div className="mx-auto flex max-w-6xl flex-col gap-4 px-4 py-6 sm:flex-row sm:items-end sm:justify-between sm:px-6">
+        <div className="mx-auto flex max-w-6xl flex-col gap-4 px-5 py-6 sm:flex-row sm:items-end sm:justify-between sm:px-7">
           <div className="space-y-1.5">
             <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-[var(--buyer-primary)]">
               Buyer Policy
@@ -396,8 +382,8 @@ export function ShopChrome({ children }: { children: React.ReactNode }) {
               JINMARKET 이용 안내
             </p>
             <p className="text-sm leading-6 text-[var(--buyer-muted)]">
-              서비스 이용 전 약관과 정책을 확인해 주세요. 앱으로 추가하면 더 편하게
-              둘러볼 수 있어요.
+              서비스 이용 전 약관과 정책을 확인해 주세요. 앱으로 추가하면 더
+              편하게 둘러볼 수 있어요.
             </p>
           </div>
           <nav

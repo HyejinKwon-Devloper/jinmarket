@@ -1,4 +1,4 @@
-import { query, withTransaction } from "@jinmarket/db";
+import { query, withTransaction, type DbClient } from "@jinmarket/db";
 import type {
   SellerAccessOverview,
   SellerAccessRequestRecord,
@@ -7,8 +7,9 @@ import type {
 
 import { AppError } from "../errors.js";
 
-import { accountIdentityJoins, accountLoginIdSql } from "./account-sql.js";
+import { safeUserLoginIdSql } from "./account-sql.js";
 import { ensureSellerProfile } from "./auth-service.js";
+import { loadUserIdentityMap } from "./user-identity-service.js";
 
 type SellerAccessRequestRow = {
   id: string;
@@ -19,6 +20,13 @@ type SellerAccessRequestRow = {
   requested_at: Date;
   reviewed_at: Date | null;
   reviewer_display_name: string | null;
+};
+
+type SellerAccessRequestQueryRow = Omit<
+  SellerAccessRequestRow,
+  "applicant_display_name" | "reviewer_display_name"
+> & {
+  reviewed_by: string | null;
 };
 
 function mapSellerAccessRequest(row: SellerAccessRequestRow): SellerAccessRequestRecord {
@@ -42,22 +50,43 @@ function isAdminUser(user: SessionUser) {
   return user.roles.includes("ADMIN");
 }
 
+async function hydrateSellerAccessRequestRows(
+  rows: SellerAccessRequestQueryRow[],
+  client?: DbClient
+) {
+  const identities = await loadUserIdentityMap(
+    rows.flatMap((row) => [row.user_id, row.reviewed_by]),
+    client
+  );
+
+  return rows.map((row) => {
+    const applicant = identities.get(row.user_id);
+    const reviewer = row.reviewed_by ? identities.get(row.reviewed_by) : null;
+
+    if (!applicant) {
+      throw new Error("Failed to load seller access applicant identity.");
+    }
+
+    return {
+      ...row,
+      applicant_display_name: applicant.displayName,
+      reviewer_display_name: reviewer?.displayName ?? null
+    } satisfies SellerAccessRequestRow;
+  });
+}
+
 async function getLatestRequestRow(userId: string) {
-  const result = await query<SellerAccessRequestRow>(
+  const result = await query<SellerAccessRequestQueryRow>(
     `
       SELECT
         sar.id,
         sar.user_id,
-        applicant.display_name AS applicant_display_name,
-        ${accountLoginIdSql("applicant")} AS applicant_threads_username,
+        ${safeUserLoginIdSql("sar.user_id")} AS applicant_threads_username,
         sar.status,
         sar.requested_at,
         sar.reviewed_at,
-        reviewer.display_name AS reviewer_display_name
+        sar.reviewed_by
       FROM seller_access_requests sar
-      JOIN users applicant ON applicant.id = sar.user_id
-      ${accountIdentityJoins("applicant")}
-      LEFT JOIN users reviewer ON reviewer.id = sar.reviewed_by
       WHERE sar.user_id = $1
       ORDER BY sar.requested_at DESC
       LIMIT 1
@@ -65,7 +94,8 @@ async function getLatestRequestRow(userId: string) {
     [userId]
   );
 
-  return result.rows[0] ?? null;
+  const rows = await hydrateSellerAccessRequestRows(result.rows);
+  return rows[0] ?? null;
 }
 
 export async function getSellerAccessOverview(user: SessionUser): Promise<SellerAccessOverview> {
@@ -84,35 +114,30 @@ export async function createSellerAccessRequest(user: SessionUser) {
   }
 
   return withTransaction(async (client) => {
-    const pendingResult = await client.query<SellerAccessRequestRow>(
+    const pendingResult = await client.query<SellerAccessRequestQueryRow>(
       `
         SELECT
           sar.id,
           sar.user_id,
-          applicant.display_name AS applicant_display_name,
-          ${accountLoginIdSql("applicant")} AS applicant_threads_username,
+          ${safeUserLoginIdSql("sar.user_id")} AS applicant_threads_username,
           sar.status,
           sar.requested_at,
           sar.reviewed_at,
-          reviewer.display_name AS reviewer_display_name
+          sar.reviewed_by
         FROM seller_access_requests sar
-        JOIN users applicant ON applicant.id = sar.user_id
-        ${accountIdentityJoins("applicant")}
-        LEFT JOIN users reviewer ON reviewer.id = sar.reviewed_by
         WHERE sar.user_id = $1
           AND sar.status = 'PENDING'
         ORDER BY sar.requested_at DESC
         LIMIT 1
-        FOR UPDATE OF sar
       `,
       [user.id]
     );
 
     if (pendingResult.rows[0]) {
-      return mapSellerAccessRequest(pendingResult.rows[0]);
+      return mapSellerAccessRequest((await hydrateSellerAccessRequestRows(pendingResult.rows, client))[0]);
     }
 
-    const inserted = await client.query<SellerAccessRequestRow>(
+    const inserted = await client.query<SellerAccessRequestQueryRow>(
       `
         WITH inserted AS (
           INSERT INTO seller_access_requests (user_id, status)
@@ -122,46 +147,38 @@ export async function createSellerAccessRequest(user: SessionUser) {
         SELECT
           inserted.id,
           inserted.user_id,
-          applicant.display_name AS applicant_display_name,
-          ${accountLoginIdSql("applicant")} AS applicant_threads_username,
+          ${safeUserLoginIdSql("inserted.user_id")} AS applicant_threads_username,
           inserted.status,
           inserted.requested_at,
           inserted.reviewed_at,
-          reviewer.display_name AS reviewer_display_name
+          inserted.reviewed_by
         FROM inserted
-        JOIN users applicant ON applicant.id = inserted.user_id
-        ${accountIdentityJoins("applicant")}
-        LEFT JOIN users reviewer ON reviewer.id = inserted.reviewed_by
       `,
       [user.id]
     );
 
-    return mapSellerAccessRequest(inserted.rows[0]);
+    return mapSellerAccessRequest((await hydrateSellerAccessRequestRows(inserted.rows, client))[0]);
   });
 }
 
 export async function listPendingSellerAccessRequests() {
-  const result = await query<SellerAccessRequestRow>(
+  const result = await query<SellerAccessRequestQueryRow>(
     `
       SELECT
         sar.id,
         sar.user_id,
-        applicant.display_name AS applicant_display_name,
-        ${accountLoginIdSql("applicant")} AS applicant_threads_username,
+        ${safeUserLoginIdSql("sar.user_id")} AS applicant_threads_username,
         sar.status,
         sar.requested_at,
         sar.reviewed_at,
-        reviewer.display_name AS reviewer_display_name
+        sar.reviewed_by
       FROM seller_access_requests sar
-      JOIN users applicant ON applicant.id = sar.user_id
-      ${accountIdentityJoins("applicant")}
-      LEFT JOIN users reviewer ON reviewer.id = sar.reviewed_by
       WHERE sar.status = 'PENDING'
       ORDER BY sar.requested_at ASC
     `
   );
 
-  return result.rows.map(mapSellerAccessRequest);
+  return (await hydrateSellerAccessRequestRows(result.rows)).map(mapSellerAccessRequest);
 }
 
 export async function approveSellerAccessRequest(requestId: string, reviewerId: string) {
@@ -170,16 +187,13 @@ export async function approveSellerAccessRequest(requestId: string, reviewerId: 
       id: string;
       user_id: string;
       status: "PENDING" | "APPROVED" | "REJECTED";
-      applicant_display_name: string;
     }>(
       `
         SELECT
           sar.id,
           sar.user_id,
-          sar.status,
-          applicant.display_name AS applicant_display_name
+          sar.status
         FROM seller_access_requests sar
-        JOIN users applicant ON applicant.id = sar.user_id
         WHERE sar.id = $1
         FOR UPDATE
       `,
@@ -216,28 +230,31 @@ export async function approveSellerAccessRequest(requestId: string, reviewerId: 
       [requestRow.user_id]
     );
 
-    await ensureSellerProfile(client, requestRow.user_id, requestRow.applicant_display_name);
+    const requestIdentity = await loadUserIdentityMap([requestRow.user_id], client);
+    const applicantDisplayName = requestIdentity.get(requestRow.user_id)?.displayName;
 
-    const updated = await client.query<SellerAccessRequestRow>(
+    if (!applicantDisplayName) {
+      throw new Error("Failed to load seller access applicant identity.");
+    }
+
+    await ensureSellerProfile(client, requestRow.user_id, applicantDisplayName);
+
+    const updated = await client.query<SellerAccessRequestQueryRow>(
       `
         SELECT
           sar.id,
           sar.user_id,
-          applicant.display_name AS applicant_display_name,
-          ${accountLoginIdSql("applicant")} AS applicant_threads_username,
+          ${safeUserLoginIdSql("sar.user_id")} AS applicant_threads_username,
           sar.status,
           sar.requested_at,
           sar.reviewed_at,
-          reviewer.display_name AS reviewer_display_name
+          sar.reviewed_by
         FROM seller_access_requests sar
-        JOIN users applicant ON applicant.id = sar.user_id
-        ${accountIdentityJoins("applicant")}
-        LEFT JOIN users reviewer ON reviewer.id = sar.reviewed_by
         WHERE sar.id = $1
       `,
       [requestId]
     );
 
-    return mapSellerAccessRequest(updated.rows[0]);
+    return mapSellerAccessRequest((await hydrateSellerAccessRequestRows(updated.rows, client))[0]);
   });
 }

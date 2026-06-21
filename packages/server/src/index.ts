@@ -1315,7 +1315,7 @@ export function createApp() {
   app.get(
     "/admin/push/audiences",
     asyncHandler(async (request, response) => {
-      requireApprovalAdmin(request);
+      await requireApprovalAdmin(request);
       const { app } = adminPushRecipientsQuerySchema.parse(request.query);
       response.json({
         app,
@@ -1327,7 +1327,7 @@ export function createApp() {
   app.get(
     "/admin/push/recipients",
     asyncHandler(async (request, response) => {
-      requireApprovalAdmin(request);
+      await requireApprovalAdmin(request);
       const parsed = adminPushRecipientsQuerySchema.parse(request.query);
       const roles = parsePushAudienceRoleFilters(request.query.roles);
       response.json({
@@ -1346,7 +1346,7 @@ export function createApp() {
   app.post(
     "/admin/push/send",
     asyncHandler(async (request, response) => {
-      requireApprovalAdmin(request);
+      await requireApprovalAdmin(request);
       const parsed = adminPushSendSchema.parse(request.body);
 
       if (!isValidPushUrl(parsed.url)) {

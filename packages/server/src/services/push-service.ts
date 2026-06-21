@@ -10,7 +10,14 @@ import type {
 } from "../../../shared/src/index.js";
 
 import { env } from "../env.js";
-import { accountIdentityJoins, accountLoginIdSql } from "./account-sql.js";
+import {
+  decryptDisplayName,
+  decryptOptionalEmail,
+  maskEmailAddress,
+  type EncryptedDisplayNameColumns,
+  type EncryptedEmailColumns
+} from "../utils/pii.js";
+import { safeUserLoginIdSql } from "./account-sql.js";
 
 type StoredSubscriptionRow = {
   endpoint: string;
@@ -41,15 +48,14 @@ type PushAudienceSummaryRow = {
   subscribed_users: string | number;
 };
 
-type PushRecipientRow = {
+type PushRecipientRow = EncryptedDisplayNameColumns &
+  EncryptedEmailColumns & {
   user_id: string;
-  display_name: string;
   login_id: string | null;
-  email: string | null;
   roles: string[] | null;
   subscription_count: string | number;
   last_seen_at: Date | null;
-};
+  };
 
 let vapidConfigured = false;
 
@@ -128,16 +134,42 @@ function isPushAudienceRole(value: string): value is PushAudienceRole {
   return value === "ADMIN" || value === "SELLER" || value === "BUYER";
 }
 
-function mapPushRecipient(row: PushRecipientRow): PushRecipientRecord {
+function buildPushRecipientRecord(row: PushRecipientRow) {
+  const email = decryptOptionalEmail(row);
+
   return {
-    userId: row.user_id,
-    displayName: row.display_name,
-    loginId: row.login_id,
-    email: row.email,
-    roles: (row.roles ?? []).filter(isPushAudienceRole),
-    subscriptionCount: normalizeCount(row.subscription_count),
-    lastSeenAt: row.last_seen_at ? row.last_seen_at.toISOString() : null
+    record: {
+      userId: row.user_id,
+      displayName: decryptDisplayName(row),
+      loginId: row.login_id,
+      email: maskEmailAddress(email),
+      roles: (row.roles ?? []).filter(isPushAudienceRole),
+      subscriptionCount: normalizeCount(row.subscription_count),
+      lastSeenAt: row.last_seen_at ? row.last_seen_at.toISOString() : null
+    } satisfies PushRecipientRecord,
+    searchEmail: email
   };
+}
+
+function matchesPushRecipientSearch(
+  item: ReturnType<typeof buildPushRecipientRecord>,
+  search: string | null
+) {
+  if (!search) {
+    return true;
+  }
+
+  const normalizedSearch = search.toLowerCase();
+
+  return (
+    item.record.displayName.toLowerCase().includes(normalizedSearch) ||
+    item.record.loginId?.toLowerCase().includes(normalizedSearch) === true ||
+    item.searchEmail?.toLowerCase().includes(normalizedSearch) === true
+  );
+}
+
+function mapPushRecipient(row: PushRecipientRow): PushRecipientRecord {
+  return buildPushRecipientRecord(row).record;
 }
 
 export function getPublicWebPushKey() {
@@ -197,6 +229,18 @@ export async function removeWebPushSubscription(userId: string, endpoint: string
 }
 
 export async function sendPushNotificationToUser(input: PushNotificationInput) {
+  if (!ensureWebPushConfiguration()) {
+    console.info(
+      `[web-push] skipped userId=${input.userId} app=${input.app} reason=vapid-not-configured`
+    );
+
+    return {
+      attempted: 0,
+      delivered: 0,
+      skipped: "vapid-not-configured"
+    } satisfies PushDeliveryResult;
+  }
+
   const subscriptions = await query<StoredSubscriptionRow>(
     `
       SELECT endpoint, p256dh_key, auth_key, expiration_time
@@ -210,18 +254,6 @@ export async function sendPushNotificationToUser(input: PushNotificationInput) {
 
   if (subscriptions.rows.length === 0) {
     return { attempted: 0, delivered: 0, skipped: "no-subscriptions" } satisfies PushDeliveryResult;
-  }
-
-  if (!ensureWebPushConfiguration()) {
-    console.info(
-      `[web-push] skipped userId=${input.userId} app=${input.app} reason=vapid-not-configured`
-    );
-
-    return {
-      attempted: subscriptions.rows.length,
-      delivered: 0,
-      skipped: "vapid-not-configured"
-    } satisfies PushDeliveryResult;
   }
 
   const payload = buildPushPayload(input);
@@ -318,15 +350,20 @@ export async function listPushRecipients(input: {
   const roleFilter = input.roles && input.roles.length > 0 ? input.roles : null;
   const search = input.search?.trim() ? input.search.trim() : null;
   const limit = input.limit ?? 120;
-  const loginIdSql = accountLoginIdSql("recipient");
+  const loginIdSql = safeUserLoginIdSql("u.id");
+  const queryLimit = search ? Math.max(limit * 5, 500) : limit;
 
   const result = await query<PushRecipientRow>(
     `
       SELECT
         u.id AS user_id,
-        u.display_name,
+        u.display_name_encrypted,
+        u.display_name_iv,
+        u.display_name_auth_tag,
         ${loginIdSql} AS login_id,
-        u.email,
+        u.email_encrypted,
+        u.email_iv,
+        u.email_auth_tag,
         ARRAY_REMOVE(ARRAY_AGG(DISTINCT ur.role::text), NULL) AS roles,
         COUNT(DISTINCT wps.id)::int AS subscription_count,
         MAX(wps.last_seen_at) AS last_seen_at
@@ -335,7 +372,6 @@ export async function listPushRecipients(input: {
         ON wps.user_id = u.id
        AND wps.app = $1
       LEFT JOIN user_roles ur ON ur.user_id = u.id
-      ${accountIdentityJoins("recipient", "u")}
       WHERE u.is_active = TRUE
         AND (
           $2::text[] IS NULL
@@ -346,26 +382,28 @@ export async function listPushRecipients(input: {
               AND role_filter.role::text = ANY($2::text[])
           )
         )
-        AND (
-          $3::text IS NULL
-          OR u.display_name ILIKE '%' || $3 || '%'
-          OR COALESCE(${loginIdSql}, '') ILIKE '%' || $3 || '%'
-          OR COALESCE(u.email, '') ILIKE '%' || $3 || '%'
-        )
       GROUP BY
         u.id,
-        u.display_name,
         ${loginIdSql},
-        u.email
+        u.display_name_encrypted,
+        u.display_name_iv,
+        u.display_name_auth_tag,
+        u.email_encrypted,
+        u.email_iv,
+        u.email_auth_tag
       ORDER BY
         MAX(wps.last_seen_at) DESC NULLS LAST,
-        u.display_name ASC
-      LIMIT $4
+        u.id ASC
+      LIMIT $3
     `,
-    [input.app, roleFilter, search, limit]
+    [input.app, roleFilter, queryLimit]
   );
 
-  return result.rows.map(mapPushRecipient);
+  return result.rows
+    .map(buildPushRecipientRecord)
+    .filter((item) => matchesPushRecipientSearch(item, search))
+    .slice(0, limit)
+    .map((item) => item.record);
 }
 
 export async function sendPushNotificationToUsers(

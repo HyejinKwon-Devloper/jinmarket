@@ -1,7 +1,12 @@
 ﻿import { v2 as cloudinary } from "cloudinary";
 import { z } from "zod";
 
-import { query, withTransaction, type DbClient } from "@jinmarket/db";
+import {
+  query,
+  runWithSystemDbContext,
+  withTransaction,
+  type DbClient,
+} from "@jinmarket/db";
 import { MAX_PRODUCT_IMAGES } from "../../../shared/src/index.js";
 import type {
   CreateProductInput,
@@ -21,8 +26,9 @@ import { AppError, isPgUniqueError } from "../errors.js";
 import { env } from "../env.js";
 import { summarizeGamePurchaseSeries } from "../utils/rps.js";
 
-import { accountIdentityJoins, accountLoginIdSql } from "./account-sql.js";
+import { safeUserLoginIdSql } from "./account-sql.js";
 import { sendPushNotificationToUser } from "./push-service.js";
+import { loadUserIdentityMap } from "./user-identity-service.js";
 
 cloudinary.config({
   cloud_name: env.CLOUDINARY_CLOUD_NAME,
@@ -100,6 +106,13 @@ type ProductCardRow = {
   sold_buyer_threads_username?: string | null;
 };
 
+type ProductCardQueryRow = Omit<
+  ProductCardRow,
+  "seller_display_name" | "sold_buyer_display_name"
+> & {
+  sold_buyer_id?: string | null;
+};
+
 type ProductImageRow = {
   id: string;
   image_url: string;
@@ -122,6 +135,8 @@ type GameAttemptRow = {
   played_at: Date;
 };
 
+type GameAttemptQueryRow = Omit<GameAttemptRow, "user_display_name">;
+
 type PriceOfferRow = {
   id: string;
   product_id: string;
@@ -132,6 +147,8 @@ type PriceOfferRow = {
   note: string | null;
   created_at: Date;
 };
+
+type PriceOfferQueryRow = Omit<PriceOfferRow, "buyer_display_name">;
 
 type OrderRow = {
   id: string;
@@ -151,6 +168,13 @@ type OrderRow = {
     | "COMPLETED"
     | "CANCELLED";
   ordered_at: Date;
+};
+
+type OrderQueryRow = Omit<
+  OrderRow,
+  "seller_display_name" | "buyer_display_name"
+> & {
+  seller_is_anonymous?: boolean;
 };
 
 function mapProductCard(row: ProductCardRow): ProductCard {
@@ -233,6 +257,100 @@ function mapPriceOffer(row: PriceOfferRow): PriceOfferRecord {
     note: row.note,
     createdAt: row.created_at.toISOString(),
   };
+}
+
+async function hydrateProductCardRows(
+  rows: ProductCardQueryRow[],
+  client?: DbClient,
+) {
+  const identities = await loadUserIdentityMap(
+    rows.flatMap((row) => [row.seller_id, row.sold_buyer_id]),
+    client,
+  );
+
+  return rows.map((row) => ({
+    ...row,
+    seller_display_name: row.is_anonymous
+      ? null
+      : (identities.get(row.seller_id)?.displayName ?? null),
+    sold_buyer_display_name: row.sold_buyer_id
+      ? (identities.get(row.sold_buyer_id)?.displayName ?? null)
+      : null,
+  })) as ProductCardRow[];
+}
+
+async function hydrateAttemptRows(
+  rows: GameAttemptQueryRow[],
+  client?: DbClient,
+) {
+  const identities = await loadUserIdentityMap(
+    rows.map((row) => row.user_id),
+    client,
+  );
+
+  return rows.map((row) => {
+    const user = identities.get(row.user_id);
+
+    if (!user) {
+      throw new Error("Failed to load game attempt user identity.");
+    }
+
+    return {
+      ...row,
+      user_display_name: user.displayName,
+    } satisfies GameAttemptRow;
+  });
+}
+
+async function hydratePriceOfferRows(
+  rows: PriceOfferQueryRow[],
+  client?: DbClient,
+) {
+  const identities = await loadUserIdentityMap(
+    rows.map((row) => row.buyer_id),
+    client,
+  );
+
+  return rows.map((row) => {
+    const buyer = identities.get(row.buyer_id);
+
+    if (!buyer) {
+      throw new Error("Failed to load price offer buyer identity.");
+    }
+
+    return {
+      ...row,
+      buyer_display_name: buyer.displayName,
+    } satisfies PriceOfferRow;
+  });
+}
+
+async function hydrateOrderRows(rows: OrderQueryRow[], client?: DbClient) {
+  const identities = await loadUserIdentityMap(
+    rows.flatMap((row) => [row.seller_id, row.buyer_id]),
+    client,
+  );
+
+  return rows.map((row) => {
+    const seller = identities.get(row.seller_id);
+    const buyer = identities.get(row.buyer_id);
+
+    if (!buyer) {
+      throw new Error("Failed to load order buyer identity.");
+    }
+
+    if (!row.seller_is_anonymous && !seller) {
+      throw new Error("Failed to load order seller identity.");
+    }
+
+    return {
+      ...row,
+      seller_display_name: row.seller_is_anonymous
+        ? null
+        : (seller?.displayName ?? null),
+      buyer_display_name: buyer.displayName,
+    } satisfies OrderRow;
+  });
 }
 
 async function resetProductSale(client: DbClient, productId: string) {
@@ -538,7 +656,7 @@ async function destroyCloudinaryImages(publicIds: string[]) {
 }
 
 export async function listProducts() {
-  const result = await query<ProductCardRow>(
+  const result = await query<ProductCardQueryRow>(
     `
       SELECT
         p.id,
@@ -555,13 +673,8 @@ export async function listProducts() {
         p.sale_ends_at,
         ${buildSaleActiveSql("p")} AS sale_active,
         p.created_at,
-        CASE
-          WHEN p.is_anonymous THEN NULL
-          ELSE u.display_name
-        END AS seller_display_name,
         pi.image_url AS primary_image_url
       FROM products p
-      JOIN users u ON u.id = p.seller_id
       LEFT JOIN product_images pi ON pi.product_id = p.id AND pi.is_primary = TRUE
       WHERE p.status = 'OPEN'
         AND ${buildSaleActiveSql("p")}
@@ -569,14 +682,14 @@ export async function listProducts() {
     `,
   );
 
-  return result.rows.map(mapProductCard);
+  return (await hydrateProductCardRows(result.rows)).map(mapProductCard);
 }
 
 export async function getProductDetail(
   productId: string,
   viewerId?: string | null,
 ): Promise<ProductDetail> {
-  const productResult = await query<ProductCardRow>(
+  const productResult = await query<ProductCardQueryRow>(
     `
       SELECT
         p.id,
@@ -593,20 +706,15 @@ export async function getProductDetail(
         p.sale_ends_at,
         ${buildSaleActiveSql("p")} AS sale_active,
         p.created_at,
-        CASE
-          WHEN p.is_anonymous THEN NULL
-          ELSE u.display_name
-        END AS seller_display_name,
         pi.image_url AS primary_image_url
       FROM products p
-      JOIN users u ON u.id = p.seller_id
       LEFT JOIN product_images pi ON pi.product_id = p.id AND pi.is_primary = TRUE
       WHERE p.id = $1
     `,
     [productId],
   );
 
-  const product = productResult.rows[0];
+  const product = (await hydrateProductCardRows(productResult.rows))[0];
 
   if (!product) {
     throw new AppError("?곹뭹??李얠쓣 ???놁뒿?덈떎.", 404);
@@ -623,62 +731,57 @@ export async function getProductDetail(
   );
 
   const attemptResult = viewerId
-    ? await query<GameAttemptRow>(
+    ? await query<GameAttemptQueryRow>(
         `
           SELECT
             gpa.id,
             gpa.product_id,
             gpa.user_id,
-            u.display_name AS user_display_name,
             gpa.player_choice,
             gpa.system_choice,
             gpa.result,
             gpa.played_at
           FROM game_purchase_attempts gpa
-          JOIN users u ON u.id = gpa.user_id
           WHERE gpa.product_id = $1 AND gpa.user_id = $2
           ORDER BY gpa.played_at DESC, gpa.created_at DESC
         `,
         [productId, viewerId],
       )
-    : { rows: [] as GameAttemptRow[] };
+    : { rows: [] as GameAttemptQueryRow[] };
 
-  const myAttempts = attemptResult.rows.map(mapAttempt);
+  const myAttempts = (await hydrateAttemptRows(attemptResult.rows)).map(
+    mapAttempt,
+  );
   const myGameProgress = viewerId
     ? summarizeGamePurchaseSeries(myAttempts)
     : null;
 
-  const orderResult = await query<OrderRow>(
+  const orderResult = await query<OrderQueryRow>(
     `
       SELECT
         o.id,
         o.product_id,
         p.title AS product_title,
         o.seller_id,
-        CASE WHEN p.is_anonymous THEN NULL ELSE seller.display_name END AS seller_display_name,
-        CASE WHEN p.is_anonymous THEN NULL ELSE ${accountLoginIdSql("seller")} END AS seller_threads_username,
+        CASE WHEN p.is_anonymous THEN NULL ELSE ${safeUserLoginIdSql("o.seller_id")} END AS seller_threads_username,
         o.buyer_id,
-        buyer.display_name AS buyer_display_name,
-        ${accountLoginIdSql("buyer")} AS buyer_threads_username,
+        ${safeUserLoginIdSql("o.buyer_id")} AS buyer_threads_username,
+        p.is_anonymous AS seller_is_anonymous,
         o.source,
         o.status,
         o.ordered_at
       FROM orders o
       JOIN products p ON p.id = o.product_id
-      JOIN users seller ON seller.id = o.seller_id
-      JOIN users buyer ON buyer.id = o.buyer_id
-      ${accountIdentityJoins("seller")}
-      ${accountIdentityJoins("buyer")}
       WHERE o.product_id = $1
         AND o.status <> 'CANCELLED'
     `,
     [productId],
   );
 
-  const soldOrder = orderResult.rows[0]
-    ? orderResult.rows[0].buyer_id === viewerId ||
-      product.seller_id === viewerId
-      ? mapOrder(orderResult.rows[0])
+  const hydratedOrders = await hydrateOrderRows(orderResult.rows);
+  const soldOrder = hydratedOrders[0]
+    ? hydratedOrders[0].buyer_id === viewerId || product.seller_id === viewerId
+      ? mapOrder(hydratedOrders[0])
       : null
     : null;
 
@@ -1018,7 +1121,7 @@ export async function deleteProduct(sellerId: string, productId: string) {
 export async function listSellerProducts(
   sellerId: string,
 ): Promise<SellerProductRecord[]> {
-  const result = await query<ProductCardRow>(
+  const result = await query<ProductCardQueryRow>(
     `
       SELECT
         p.id,
@@ -1035,24 +1138,22 @@ export async function listSellerProducts(
         p.sale_ends_at,
         ${buildSaleActiveSql("p")} AS sale_active,
         p.created_at,
-        u.display_name AS seller_display_name,
         pi.image_url AS primary_image_url,
         o.id AS sold_order_id,
-        buyer.display_name AS sold_buyer_display_name,
-        ${accountLoginIdSql("buyer")} AS sold_buyer_threads_username
+        o.buyer_id AS sold_buyer_id,
+        ${safeUserLoginIdSql("o.buyer_id")} AS sold_buyer_threads_username
       FROM products p
-      JOIN users u ON u.id = p.seller_id
       LEFT JOIN product_images pi ON pi.product_id = p.id AND pi.is_primary = TRUE
       LEFT JOIN orders o ON o.product_id = p.id AND o.status <> 'CANCELLED'
-      LEFT JOIN users buyer ON buyer.id = o.buyer_id
-      ${accountIdentityJoins("buyer")}
       WHERE p.seller_id = $1
       ORDER BY p.created_at DESC
     `,
     [sellerId],
   );
 
-  return result.rows.map((row) => ({
+  const hydratedRows = await hydrateProductCardRows(result.rows);
+
+  return hydratedRows.map((row) => ({
     ...mapProductCard(row),
     soldOrderId: row.sold_order_id ?? null,
     soldBuyerDisplayName: row.sold_buyer_display_name ?? null,
@@ -1093,26 +1194,24 @@ export async function listProductGameAttempts(
     );
   }
 
-  const result = await query<GameAttemptRow>(
+  const result = await query<GameAttemptQueryRow>(
     `
       SELECT
         gpa.id,
         gpa.product_id,
         gpa.user_id,
-        u.display_name AS user_display_name,
         gpa.player_choice,
         gpa.system_choice,
         gpa.result,
         gpa.played_at
       FROM game_purchase_attempts gpa
-      JOIN users u ON u.id = gpa.user_id
       WHERE gpa.product_id = $1
       ORDER BY gpa.played_at DESC
     `,
     [productId],
   );
 
-  return result.rows.map(mapAttempt);
+  return (await hydrateAttemptRows(result.rows)).map(mapAttempt);
 }
 
 export async function createPriceOffer(
@@ -1122,60 +1221,63 @@ export async function createPriceOffer(
 ) {
   const parsed = createPriceOfferSchema.parse(input);
 
-  const result = await withTransaction(async (client) => {
-    const productResult = await client.query<{
-      title: string;
-      seller_id: string;
-      status: "DRAFT" | "OPEN" | "SOLD_OUT" | "CANCELLED";
-      allow_price_offer: boolean;
-      published_at: Date | null;
-      created_at: Date;
-      sale_ends_at: Date | null;
-    }>(
-      `
+  const result = await runWithSystemDbContext(() =>
+    withTransaction(async (client) => {
+      const productResult = await client.query<{
+        title: string;
+        seller_id: string;
+        status: "DRAFT" | "OPEN" | "SOLD_OUT" | "CANCELLED";
+        allow_price_offer: boolean;
+        published_at: Date | null;
+        created_at: Date;
+        sale_ends_at: Date | null;
+      }>(
+        `
         SELECT title, seller_id, status, allow_price_offer, published_at, created_at, sale_ends_at
         FROM products
         WHERE id = $1
         FOR UPDATE
       `,
-      [productId],
-    );
-
-    const product = productResult.rows[0];
-
-    if (!product) {
-      throw new AppError("가격 제안을 찾을 수 없습니다.", 404);
-    }
-
-    if (product.seller_id === userId) {
-      throw new AppError("자신의 가격 제안은 수락할 수 없습니다.", 400);
-    }
-
-    if (product.status !== "OPEN") {
-      throw new AppError(
-        "판매 중이 아닌 상품의 가격 제안은 수락할 수 없습니다.",
-        409,
+        [productId],
       );
-    }
 
-    const now = Date.now();
-    const saleStartsAt = (product.published_at ?? product.created_at).getTime();
-    const saleEndsAt = product.sale_ends_at?.getTime() ?? null;
+      const product = productResult.rows[0];
 
-    if (saleStartsAt > now) {
-      throw new AppError("아직 판매 시작 전인 상품입니다.", 409);
-    }
+      if (!product) {
+        throw new AppError("가격 제안을 찾을 수 없습니다.", 404);
+      }
 
-    if (saleEndsAt !== null && saleEndsAt < now) {
-      throw new AppError("판매 기간이 종료된 상품입니다.", 409);
-    }
+      if (product.seller_id === userId) {
+        throw new AppError("자신의 가격 제안은 수락할 수 없습니다.", 400);
+      }
 
-    if (!product.allow_price_offer) {
-      throw new AppError("???곹뭹? 媛寃??쒖븞??諛쏆? ?딆뒿?덈떎.", 400);
-    }
+      if (product.status !== "OPEN") {
+        throw new AppError(
+          "판매 중이 아닌 상품의 가격 제안은 수락할 수 없습니다.",
+          409,
+        );
+      }
 
-    const inserted = await client.query<PriceOfferRow>(
-      `
+      const now = Date.now();
+      const saleStartsAt = (
+        product.published_at ?? product.created_at
+      ).getTime();
+      const saleEndsAt = product.sale_ends_at?.getTime() ?? null;
+
+      if (saleStartsAt > now) {
+        throw new AppError("아직 판매 시작 전인 상품입니다.", 409);
+      }
+
+      if (saleEndsAt !== null && saleEndsAt < now) {
+        throw new AppError("판매 기간이 종료된 상품입니다.", 409);
+      }
+
+      if (!product.allow_price_offer) {
+        throw new AppError("???곹뭹? 媛寃??쒖븞??諛쏆? ?딆뒿?덈떎.", 400);
+      }
+
+      const inserted = await client.query<PriceOfferQueryRow>(
+        `
         WITH inserted AS (
           INSERT INTO price_offers (product_id, buyer_id, offered_price_krw, note)
           VALUES ($1, $2, $3, $4)
@@ -1185,35 +1287,39 @@ export async function createPriceOffer(
           inserted.id,
           inserted.product_id,
           inserted.buyer_id,
-          u.display_name AS buyer_display_name,
-          ${accountLoginIdSql("buyer")} AS buyer_threads_username,
+          ${safeUserLoginIdSql("inserted.buyer_id")} AS buyer_threads_username,
           inserted.offered_price_krw,
           inserted.note,
           inserted.created_at
         FROM inserted
-        JOIN users u ON u.id = inserted.buyer_id
-        ${accountIdentityJoins("buyer", "u")}
       `,
-      [productId, userId, parsed.offeredPriceKrw, parsed.note || null],
-    );
+        [productId, userId, parsed.offeredPriceKrw, parsed.note || null],
+      );
 
-    return {
-      item: mapPriceOffer(inserted.rows[0]),
-      sellerId: product.seller_id,
-      productTitle: product.title,
-      buyerDisplayName: inserted.rows[0].buyer_display_name,
-    };
-  });
+      const hydratedOffer = (
+        await hydratePriceOfferRows(inserted.rows, client)
+      )[0];
+
+      return {
+        item: mapPriceOffer(hydratedOffer),
+        sellerId: product.seller_id,
+        productTitle: product.title,
+        buyerDisplayName: hydratedOffer.buyer_display_name,
+      };
+    }),
+  );
 
   try {
-    await sendPushNotificationToUser({
-      userId: result.sellerId,
-      app: "ADMIN",
-      title: "새 가격 제안이 도착했어요",
-      body: `${result.buyerDisplayName}님이 ${result.productTitle}에 새 가격을 제안했어요.`,
-      url: `/products/${productId}`,
-      tag: `price-offer:${result.item.id}`,
-    });
+    await runWithSystemDbContext(() =>
+      sendPushNotificationToUser({
+        userId: result.sellerId,
+        app: "ADMIN",
+        title: "새 가격 제안이 도착했어요",
+        body: `${result.buyerDisplayName}님이 ${result.productTitle}에 새 가격을 제안했어요.`,
+        url: `/products/${productId}`,
+        tag: `price-offer:${result.item.id}`,
+      }),
+    );
   } catch (error) {
     console.error("Failed to send seller price-offer push notification", error);
   }
@@ -1241,27 +1347,24 @@ export async function listProductPriceOffers(
     );
   }
 
-  const result = await query<PriceOfferRow>(
+  const result = await query<PriceOfferQueryRow>(
     `
       SELECT
         po.id,
         po.product_id,
         po.buyer_id,
-        u.display_name AS buyer_display_name,
-        ${accountLoginIdSql("buyer")} AS buyer_threads_username,
+        ${safeUserLoginIdSql("po.buyer_id")} AS buyer_threads_username,
         po.offered_price_krw,
         po.note,
         po.created_at
       FROM price_offers po
-      JOIN users u ON u.id = po.buyer_id
-      ${accountIdentityJoins("buyer", "u")}
       WHERE po.product_id = $1
       ORDER BY po.created_at DESC
     `,
     [productId],
   );
 
-  return result.rows.map(mapPriceOffer);
+  return (await hydratePriceOfferRows(result.rows)).map(mapPriceOffer);
 }
 
 export async function acceptPriceOffer(
@@ -1273,93 +1376,95 @@ export async function acceptPriceOffer(
   let acceptedBuyerId: string | null = null;
   let acceptedProductTitle: string | null = null;
 
-  await withTransaction(async (client) => {
-    const productResult = await client.query<{
-      id: string;
-      title: string;
-      seller_id: string;
-      status: "DRAFT" | "OPEN" | "SOLD_OUT" | "CANCELLED";
-      published_at: Date | null;
-      created_at: Date;
-      sale_ends_at: Date | null;
-    }>(
-      `
+  await runWithSystemDbContext(() =>
+    withTransaction(async (client) => {
+      const productResult = await client.query<{
+        id: string;
+        title: string;
+        seller_id: string;
+        status: "DRAFT" | "OPEN" | "SOLD_OUT" | "CANCELLED";
+        published_at: Date | null;
+        created_at: Date;
+        sale_ends_at: Date | null;
+      }>(
+        `
         SELECT id, title, seller_id, status, published_at, created_at, sale_ends_at
         FROM products
         WHERE id = $1
         FOR UPDATE
       `,
-      [productId],
-    );
-
-    const product = productResult.rows[0];
-
-    if (!product) {
-      throw new AppError("가격 제안을 찾을 수 없습니다.", 404);
-    }
-
-    if (product.seller_id !== sellerId) {
-      throw new AppError("?대떦 ?곹뭹???먮ℓ 泥섎━??沅뚰븳???놁뒿?덈떎.", 403);
-    }
-
-    if (product.status !== "OPEN") {
-      throw new AppError(
-        "판매 중이 아닌 상품의 가격 제안은 수락할 수 없습니다.",
-        409,
+        [productId],
       );
-    }
 
-    const now = Date.now();
-    const saleStartsAt = (product.published_at ?? product.created_at).getTime();
-    const saleEndsAt = product.sale_ends_at?.getTime() ?? null;
+      const product = productResult.rows[0];
 
-    if (saleStartsAt > now) {
-      throw new AppError(
-        "아직 판매 시작 전인 상품의 제안은 수락할 수 없습니다.",
-        409,
-      );
-    }
+      if (!product) {
+        throw new AppError("가격 제안을 찾을 수 없습니다.", 404);
+      }
 
-    if (saleEndsAt !== null && saleEndsAt < now) {
-      throw new AppError(
-        "판매 기간이 종료된 상품의 제안은 수락할 수 없습니다.",
-        409,
-      );
-    }
+      if (product.seller_id !== sellerId) {
+        throw new AppError("?대떦 ?곹뭹???먮ℓ 泥섎━??沅뚰븳???놁뒿?덈떎.", 403);
+      }
 
-    const offerResult = await client.query<PriceOfferRow>(
-      `
+      if (product.status !== "OPEN") {
+        throw new AppError(
+          "판매 중이 아닌 상품의 가격 제안은 수락할 수 없습니다.",
+          409,
+        );
+      }
+
+      const now = Date.now();
+      const saleStartsAt = (
+        product.published_at ?? product.created_at
+      ).getTime();
+      const saleEndsAt = product.sale_ends_at?.getTime() ?? null;
+
+      if (saleStartsAt > now) {
+        throw new AppError(
+          "아직 판매 시작 전인 상품의 제안은 수락할 수 없습니다.",
+          409,
+        );
+      }
+
+      if (saleEndsAt !== null && saleEndsAt < now) {
+        throw new AppError(
+          "판매 기간이 종료된 상품의 제안은 수락할 수 없습니다.",
+          409,
+        );
+      }
+
+      const offerResult = await client.query<PriceOfferQueryRow>(
+        `
         SELECT
           po.id,
           po.product_id,
           po.buyer_id,
-          u.display_name AS buyer_display_name,
-          ${accountLoginIdSql("buyer")} AS buyer_threads_username,
+          ${safeUserLoginIdSql("po.buyer_id")} AS buyer_threads_username,
           po.offered_price_krw,
           po.note,
           po.created_at
         FROM price_offers po
-        JOIN users u ON u.id = po.buyer_id
-        ${accountIdentityJoins("buyer", "u")}
         WHERE po.id = $1 AND po.product_id = $2
         FOR UPDATE OF po
       `,
-      [offerId, productId],
-    );
+        [offerId, productId],
+      );
 
-    const offer = offerResult.rows[0];
+      const offer = offerResult.rows[0]
+        ? (await hydratePriceOfferRows(offerResult.rows, client))[0]
+        : null;
 
-    if (!offer) {
-      throw new AppError("가격 제안을 찾을 수 없습니다.", 404);
-    }
+      if (!offer) {
+        throw new AppError("가격 제안을 찾을 수 없습니다.", 404);
+      }
 
-    if (offer.buyer_id === sellerId) {
-      throw new AppError("자신의 가격 제안은 수락할 수 없습니다.", 400);
-    }
+      if (offer.buyer_id === sellerId) {
+        throw new AppError("자신의 가격 제안은 수락할 수 없습니다.", 400);
+      }
 
-    try {
-      const orderResult = await client.query<OrderRow>(
-        `
+      try {
+        const orderResult = await client.query<OrderQueryRow>(
+          `
           WITH inserted AS (
             INSERT INTO orders (product_id, seller_id, buyer_id, source, buyer_note)
             VALUES ($1, $2, $3, 'PRICE_OFFER_ACCEPTED', $4)
@@ -1370,51 +1475,51 @@ export async function acceptPriceOffer(
             inserted.product_id,
             $5::text AS product_title,
             inserted.seller_id,
-            seller.display_name AS seller_display_name,
-            ${accountLoginIdSql("seller")} AS seller_threads_username,
+            ${safeUserLoginIdSql("inserted.seller_id")} AS seller_threads_username,
             inserted.buyer_id,
-            buyer.display_name AS buyer_display_name,
-            ${accountLoginIdSql("buyer")} AS buyer_threads_username,
+            ${safeUserLoginIdSql("inserted.buyer_id")} AS buyer_threads_username,
+            FALSE AS seller_is_anonymous,
             inserted.source,
             inserted.status,
             inserted.ordered_at
           FROM inserted
-          JOIN users seller ON seller.id = inserted.seller_id
-          JOIN users buyer ON buyer.id = inserted.buyer_id
-          ${accountIdentityJoins("seller")}
-          ${accountIdentityJoins("buyer")}
         `,
-        [
-          product.id,
-          sellerId,
-          offer.buyer_id,
-          offer.note ?? null,
-          product.title,
-        ],
-      );
+          [
+            product.id,
+            sellerId,
+            offer.buyer_id,
+            offer.note ?? null,
+            product.title,
+          ],
+        );
 
-      await client.query(
-        `
+        const hydratedOrder = (
+          await hydrateOrderRows(orderResult.rows, client)
+        )[0];
+
+        await client.query(
+          `
           UPDATE products
           SET status = 'SOLD_OUT',
               sold_out_at = NOW(),
               updated_at = NOW()
           WHERE id = $1
         `,
-        [product.id],
-      );
+          [product.id],
+        );
 
-      acceptedOrder = mapOrder(orderResult.rows[0]);
-      acceptedBuyerId = orderResult.rows[0].buyer_id;
-      acceptedProductTitle = orderResult.rows[0].product_title;
-    } catch (error) {
-      if (isPgUniqueError(error)) {
-        throw new AppError("이미 처리된 가격 제안입니다.", 409);
+        acceptedOrder = mapOrder(hydratedOrder);
+        acceptedBuyerId = hydratedOrder.buyer_id;
+        acceptedProductTitle = hydratedOrder.product_title;
+      } catch (error) {
+        if (isPgUniqueError(error)) {
+          throw new AppError("이미 처리된 가격 제안입니다.", 409);
+        }
+
+        throw error;
       }
-
-      throw error;
-    }
-  });
+    }),
+  );
 
   if (!acceptedOrder) {
     throw new AppError("주문 생성에 실패했습니다.", 500);
@@ -1423,15 +1528,20 @@ export async function acceptPriceOffer(
   const finalizedOrder = acceptedOrder as OrderRecord;
 
   if (acceptedBuyerId && acceptedProductTitle) {
+    const buyerId = acceptedBuyerId;
+    const productTitle = acceptedProductTitle;
+
     try {
-      await sendPushNotificationToUser({
-        userId: acceptedBuyerId,
-        app: "SHOP",
-        title: "가격 제안이 수락되었어요",
-        body: `${acceptedProductTitle} 상품의 가격 제안이 수락되어 주문이 생성되었어요.`,
-        url: "/my/orders",
-        tag: `price-offer-accepted:${finalizedOrder.id}`,
-      });
+      await runWithSystemDbContext(() =>
+        sendPushNotificationToUser({
+          userId: buyerId,
+          app: "SHOP",
+          title: "가격 제안이 수락되었어요",
+          body: `${productTitle} 상품의 가격 제안이 수락되어 주문이 생성되었어요.`,
+          url: "/my/orders",
+          tag: `price-offer-accepted:${finalizedOrder.id}`,
+        }),
+      );
     } catch (error) {
       console.error(
         "Failed to send buyer price-offer acceptance push notification",
@@ -1447,65 +1557,55 @@ export async function acceptPriceOffer(
 }
 
 export async function listSellerOrders(sellerId: string) {
-  const result = await query<OrderRow>(
+  const result = await query<OrderQueryRow>(
     `
       SELECT
         o.id,
         o.product_id,
         p.title AS product_title,
         o.seller_id,
-        CASE WHEN p.is_anonymous THEN NULL ELSE seller.display_name END AS seller_display_name,
-        CASE WHEN p.is_anonymous THEN NULL ELSE ${accountLoginIdSql("seller")} END AS seller_threads_username,
+        CASE WHEN p.is_anonymous THEN NULL ELSE ${safeUserLoginIdSql("o.seller_id")} END AS seller_threads_username,
         o.buyer_id,
-        buyer.display_name AS buyer_display_name,
-        ${accountLoginIdSql("buyer")} AS buyer_threads_username,
+        ${safeUserLoginIdSql("o.buyer_id")} AS buyer_threads_username,
+        p.is_anonymous AS seller_is_anonymous,
         o.source,
         o.status,
         o.ordered_at
       FROM orders o
       JOIN products p ON p.id = o.product_id
-      JOIN users seller ON seller.id = o.seller_id
-      JOIN users buyer ON buyer.id = o.buyer_id
-      ${accountIdentityJoins("seller")}
-      ${accountIdentityJoins("buyer")}
       WHERE o.seller_id = $1
       ORDER BY o.ordered_at DESC
     `,
     [sellerId],
   );
 
-  return result.rows.map(mapOrder);
+  return (await hydrateOrderRows(result.rows)).map(mapOrder);
 }
 
 export async function listMyOrders(userId: string) {
-  const result = await query<OrderRow>(
+  const result = await query<OrderQueryRow>(
     `
       SELECT
         o.id,
         o.product_id,
         p.title AS product_title,
         o.seller_id,
-        CASE WHEN p.is_anonymous THEN NULL ELSE seller.display_name END AS seller_display_name,
-        CASE WHEN p.is_anonymous THEN NULL ELSE ${accountLoginIdSql("seller")} END AS seller_threads_username,
+        CASE WHEN p.is_anonymous THEN NULL ELSE ${safeUserLoginIdSql("o.seller_id")} END AS seller_threads_username,
         o.buyer_id,
-        buyer.display_name AS buyer_display_name,
-        ${accountLoginIdSql("buyer")} AS buyer_threads_username,
+        ${safeUserLoginIdSql("o.buyer_id")} AS buyer_threads_username,
+        p.is_anonymous AS seller_is_anonymous,
         o.source,
         o.status,
         o.ordered_at
       FROM orders o
       JOIN products p ON p.id = o.product_id
-      JOIN users seller ON seller.id = o.seller_id
-      JOIN users buyer ON buyer.id = o.buyer_id
-      ${accountIdentityJoins("seller")}
-      ${accountIdentityJoins("buyer")}
       WHERE o.buyer_id = $1
       ORDER BY o.ordered_at DESC
     `,
     [userId],
   );
 
-  return result.rows.map(mapOrder);
+  return (await hydrateOrderRows(result.rows)).map(mapOrder);
 }
 
 export function signCloudinaryUpload(

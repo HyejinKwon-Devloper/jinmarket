@@ -1,20 +1,17 @@
 "use client";
 
+import type { FormEvent } from "react";
 import { useEffect, useMemo, useState } from "react";
 import type {
   PushApp,
   PushAudienceRole,
   PushAudienceSummary,
   PushRecipientRecord,
-  SessionUser
+  SellerApprovalAdminAuthStatus,
+  SessionUser,
 } from "@jinmarket/shared";
 
-import { fetchCurrentUser, isApprovalAdmin, requestJson } from "../lib/api";
-
-type AdminApprovalAuthStatus = {
-  eligible: boolean;
-  verified: boolean;
-};
+import { ApiError, fetchCurrentUser, isApprovalAdmin, requestJson } from "../lib/api";
 
 type PushAudienceSummaryResponse = {
   app: PushApp;
@@ -43,7 +40,7 @@ const roleOrder: PushAudienceRole[] = ["ADMIN", "SELLER", "BUYER"];
 
 const defaultRoleFilters: Record<PushApp, PushAudienceRole[]> = {
   ADMIN: ["ADMIN", "SELLER"],
-  SHOP: ["BUYER"]
+  SHOP: ["BUYER"],
 };
 
 function getAppLabel(app: PushApp) {
@@ -65,7 +62,7 @@ function getRoleLabel(role: PushAudienceRole) {
 
 function formatLastSeen(value: string | null) {
   if (!value) {
-    return "아직 기록 없음";
+    return "기록 없음";
   }
 
   return new Date(value).toLocaleString("ko-KR");
@@ -90,45 +87,50 @@ function buildPreset(app: PushApp, preset: "sold" | "offer") {
     return app === "ADMIN"
       ? {
           title: "새 가격 제안이 도착했어요",
-          body: "상품에 새로운 가격 제안이 도착했습니다. 판매자 페이지에서 바로 확인해 주세요.",
+          body: "상품에 새 가격 제안이 도착했습니다. 판매자 센터에서 바로 확인해 주세요.",
           url: "/products",
-          tag: "manual-price-offer"
+          tag: "manual-price-offer",
         }
       : {
-          title: "가격 제안 소식이 업데이트되었어요",
-          body: "구매 중인 상품과 관련된 가격 제안 상태가 바뀌었습니다.",
+          title: "가격 제안 상태가 바뀌었어요",
+          body: "구매 중인 상품과 관련된 가격 제안 상태가 업데이트되었습니다.",
           url: "/my/orders",
-          tag: "manual-price-offer"
+          tag: "manual-price-offer",
         };
   }
 
   return app === "ADMIN"
     ? {
         title: "상품이 판매되었어요",
-        body: "새 주문이 생성되었습니다. 주문 현황에서 구매자와 진행 상태를 확인해 주세요.",
+        body: "새 주문이 생성되었습니다. 주문 목록에서 구매자와 진행 상태를 확인해 주세요.",
         url: "/orders",
-        tag: "manual-product-sold"
+        tag: "manual-product-sold",
       }
     : {
         title: "주문 상태를 확인해 주세요",
-        body: "주문과 관련된 새로운 알림이 도착했습니다. 앱에서 상세 상태를 확인해 주세요.",
+        body: "주문과 관련된 새 알림이 도착했습니다. 앱에서 주문 상태를 확인해 주세요.",
         url: "/my/orders",
-        tag: "manual-product-sold"
+        tag: "manual-product-sold",
       };
 }
 
-function needsAdminReauth(error: unknown) {
-  return error instanceof Error && error.message.includes("관리자 비밀번호 확인이 필요");
+function isApprovalOtpError(error: unknown) {
+  return (
+    error instanceof ApiError &&
+    (error.code === "SELLER_APPROVAL_TOTP_REQUIRED" ||
+      error.code === "SELLER_APPROVAL_TOTP_SETUP_REQUIRED")
+  );
 }
 
-function LegacyManagedPushNotificationsPageContent() {
+export function ManagedPushNotificationsPageContentV2() {
   const initialPreset = buildPreset("ADMIN", "sold");
   const [currentUser, setCurrentUser] = useState<SessionUser | null | undefined>(undefined);
+  const [authStatus, setAuthStatus] = useState<SellerApprovalAdminAuthStatus | null>(null);
   const [pageMessage, setPageMessage] = useState<string | null>(null);
   const [sendMessage, setSendMessage] = useState<string | null>(null);
-  const [requiresAdminPassword, setRequiresAdminPassword] = useState(false);
-  const [adminPassword, setAdminPassword] = useState("");
-  const [isVerifyingPassword, setIsVerifyingPassword] = useState(false);
+  const [requiresAdminOtp, setRequiresAdminOtp] = useState(false);
+  const [otpCode, setOtpCode] = useState("");
+  const [isSubmittingOtp, setIsSubmittingOtp] = useState(false);
   const [selectedApp, setSelectedApp] = useState<PushApp>("ADMIN");
   const [selectedRoles, setSelectedRoles] = useState<PushAudienceRole[]>(defaultRoleFilters.ADMIN);
   const [searchInput, setSearchInput] = useState("");
@@ -147,7 +149,7 @@ function LegacyManagedPushNotificationsPageContent() {
   const selectedUserIdSet = useMemo(() => new Set(selectedUserIds), [selectedUserIds]);
 
   async function fetchApprovalAuthStatus() {
-    return requestJson<AdminApprovalAuthStatus>("/admin/seller-access/auth");
+    return requestJson<SellerApprovalAdminAuthStatus>("/admin/seller-access/auth");
   }
 
   useEffect(() => {
@@ -173,30 +175,38 @@ function LegacyManagedPushNotificationsPageContent() {
           return;
         }
 
-        const authStatus = await fetchApprovalAuthStatus();
+        const nextAuthStatus = await fetchApprovalAuthStatus();
 
         if (cancelled) {
           return;
         }
 
-        if (!authStatus.eligible) {
+        setAuthStatus(nextAuthStatus);
+
+        if (!nextAuthStatus.eligible) {
           setPageMessage("관리자 계정만 푸시 알림을 발송하고 관리할 수 있습니다.");
           return;
         }
 
-        if (!authStatus.verified) {
-          setRequiresAdminPassword(true);
-          setPageMessage("푸시 관리 화면에 들어가려면 관리자 비밀번호를 한 번 더 확인해 주세요.");
+        if (!nextAuthStatus.verified) {
+          setRequiresAdminOtp(true);
+
+          if (!nextAuthStatus.totpEnabled) {
+            setPageMessage(
+              "판매자 승인용 Google OTP가 아직 고정 등록되지 않았습니다. 운영자 등록 후 다시 시도해 주세요.",
+            );
+            return;
+          }
+
+          setPageMessage("푸시 관리 화면에 들어가려면 Google OTP 6자리 코드를 입력해 주세요.");
           return;
         }
 
-        setRequiresAdminPassword(false);
+        setRequiresAdminOtp(false);
         setPageMessage(null);
       } catch (error) {
         if (!cancelled) {
-          setPageMessage(
-            error instanceof Error ? error.message : "푸시 관리 화면을 불러오지 못했습니다."
-          );
+          setPageMessage(error instanceof Error ? error.message : "푸시 관리 화면을 불러오지 못했습니다.");
         }
       }
     }
@@ -209,7 +219,13 @@ function LegacyManagedPushNotificationsPageContent() {
   }, []);
 
   useEffect(() => {
-    if (currentUser === undefined || !currentUser || !isApprovalAdmin(currentUser) || requiresAdminPassword) {
+    if (
+      currentUser === undefined ||
+      !currentUser ||
+      !isApprovalAdmin(currentUser) ||
+      requiresAdminOtp ||
+      !authStatus?.verified
+    ) {
       return;
     }
 
@@ -222,7 +238,7 @@ function LegacyManagedPushNotificationsPageContent() {
         const queryString = buildRecipientQuery(selectedApp, selectedRoles, searchTerm);
         const [summaryResponse, recipientsResponse] = await Promise.all([
           requestJson<PushAudienceSummaryResponse>(`/admin/push/audiences?app=${selectedApp}`),
-          requestJson<PushRecipientsResponse>(`/admin/push/recipients?${queryString}`)
+          requestJson<PushRecipientsResponse>(`/admin/push/recipients?${queryString}`),
         ]);
 
         if (cancelled) {
@@ -241,16 +257,16 @@ function LegacyManagedPushNotificationsPageContent() {
           return;
         }
 
-        if (needsAdminReauth(error)) {
-          setRequiresAdminPassword(true);
+        if (isApprovalOtpError(error)) {
+          const nextAuthStatus = await fetchApprovalAuthStatus().catch(() => null);
+          setAuthStatus(nextAuthStatus);
+          setRequiresAdminOtp(true);
           setRecipients([]);
           setSummaries([]);
           setSelectedUserIds([]);
         }
 
-        setPageMessage(
-          error instanceof Error ? error.message : "푸시 대상 목록을 불러오지 못했습니다."
-        );
+        setPageMessage(error instanceof Error ? error.message : "푸시 대상 목록을 불러오지 못했습니다.");
       } finally {
         if (!cancelled) {
           setIsLoadingData(false);
@@ -263,7 +279,32 @@ function LegacyManagedPushNotificationsPageContent() {
     return () => {
       cancelled = true;
     };
-  }, [currentUser, requiresAdminPassword, searchTerm, selectedApp, selectedRoles]);
+  }, [authStatus?.verified, currentUser, requiresAdminOtp, searchTerm, selectedApp, selectedRoles]);
+
+  async function handleOtpSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+
+    if (isSubmittingOtp || !authStatus?.totpEnabled) {
+      return;
+    }
+
+    try {
+      setIsSubmittingOtp(true);
+      setPageMessage(null);
+      const response = await requestJson<{ ok: true; message?: string }>("/admin/seller-access/auth", {
+        method: "POST",
+        body: JSON.stringify({ code: otpCode }),
+      });
+      setAuthStatus({ eligible: true, verified: true, totpEnabled: true });
+      setRequiresAdminOtp(false);
+      setOtpCode("");
+      setPageMessage(response.message ?? null);
+    } catch (error) {
+      setPageMessage(error instanceof Error ? error.message : "Google OTP 확인에 실패했습니다.");
+    } finally {
+      setIsSubmittingOtp(false);
+    }
+  }
 
   function toggleRole(role: PushAudienceRole) {
     setSelectedUserIds([]);
@@ -278,7 +319,7 @@ function LegacyManagedPushNotificationsPageContent() {
 
   function toggleUser(userId: string) {
     setSelectedUserIds((current) =>
-      current.includes(userId) ? current.filter((item) => item !== userId) : [...current, userId]
+      current.includes(userId) ? current.filter((item) => item !== userId) : [...current, userId],
     );
   }
 
@@ -299,58 +340,48 @@ function LegacyManagedPushNotificationsPageContent() {
     return <section className="panel">{pageMessage ?? "접근 권한이 없습니다."}</section>;
   }
 
-  if (requiresAdminPassword) {
+  if (requiresAdminOtp) {
     return (
       <section className="panel">
         <p className="eyebrow">Push Manager</p>
-        <h1>관리자 비밀번호 확인</h1>
+        <h1>Google OTP 확인</h1>
         <p className="muted">
-          푸시 알림 발송은 판매자 승인 페이지와 같은 보호 절차를 따릅니다. 관리자 비밀번호를 한 번 더
-          확인해 주세요.
+          푸시 발송 화면은 관리자 로그인만으로 바로 열리지 않습니다. Google Authenticator 같은 OTP 앱의
+          6자리 코드를 한 번 더 확인해 주세요.
         </p>
-        <form
-          onSubmit={async (event) => {
-            event.preventDefault();
 
-            if (isVerifyingPassword) {
-              return;
-            }
+        {authStatus?.totpEnabled ? (
+          <form onSubmit={(event) => void handleOtpSubmit(event)}>
+            <div className="field" style={{ marginTop: 18 }}>
+              <label>현재 Google OTP 6자리 코드</label>
+              <input
+                className="input"
+                inputMode="numeric"
+                autoComplete="one-time-code"
+                maxLength={6}
+                pattern="\d{6}"
+                value={otpCode}
+                onChange={(event) => setOtpCode(event.target.value.replace(/\D+/g, "").slice(0, 6))}
+              />
+            </div>
+            <div className="actionRow" style={{ marginTop: 18 }}>
+              <button className="primaryButton" disabled={isSubmittingOtp} type="submit">
+                {isSubmittingOtp ? "확인 중..." : "Google OTP 확인"}
+              </button>
+            </div>
+          </form>
+        ) : (
+          <>
+            <p className="muted" style={{ marginTop: 18 }}>
+            이 계정의 푸시 발송용 관리자 OTP는 웹에서 새로 등록할 수 없습니다. 운영자가 미리 고정 등록한 뒤
+            다시 시도해 주세요.
+          </p>
+            <p className="muted" style={{ marginTop: 12 }}>
+              OTP provisioning: <code>npx tsx scripts/provision-seller-approval-totp.ts --login-id your-admin-login-id</code>
+            </p>
+          </>
+        )}
 
-            try {
-              setIsVerifyingPassword(true);
-              setPageMessage(null);
-              await requestJson("/admin/seller-access/auth", {
-                method: "POST",
-                body: JSON.stringify({ password: adminPassword })
-              });
-              setRequiresAdminPassword(false);
-              setAdminPassword("");
-              setPageMessage(null);
-            } catch (error) {
-              setPageMessage(
-                error instanceof Error ? error.message : "관리자 비밀번호 확인에 실패했습니다."
-              );
-            } finally {
-              setIsVerifyingPassword(false);
-            }
-          }}
-        >
-          <div className="field" style={{ marginTop: 18 }}>
-            <label>관리자 비밀번호</label>
-            <input
-              className="input"
-              type="password"
-              autoComplete="current-password"
-              value={adminPassword}
-              onChange={(event) => setAdminPassword(event.target.value)}
-            />
-          </div>
-          <div className="actionRow" style={{ marginTop: 18 }}>
-            <button className="primaryButton" disabled={isVerifyingPassword} type="submit">
-              {isVerifyingPassword ? "확인 중..." : "비밀번호 확인"}
-            </button>
-          </div>
-        </form>
         {pageMessage ? <div className="message">{pageMessage}</div> : null}
       </section>
     );
@@ -362,8 +393,8 @@ function LegacyManagedPushNotificationsPageContent() {
         <p className="eyebrow">Push Manager</p>
         <h1>운영 푸시 발송</h1>
         <p className="muted">
-          상품 판매 알림은 이미 자동 푸시로 연결되어 있고, 여기서는 운영 공지나 재알림을 관리자 승인
-          절차 아래에서 직접 보낼 수 있습니다. 알림 허용을 완료한 사용자만 수신 목록에 표시됩니다.
+          상품 판매 알림은 자동 푸시로도 연결되지만, 여기서는 운영 공지나 재알림을 관리자 승인 흐름 아래에서
+          직접 발송할 수 있습니다.
         </p>
 
         <div
@@ -371,7 +402,7 @@ function LegacyManagedPushNotificationsPageContent() {
             display: "grid",
             gap: 18,
             gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))",
-            marginTop: 18
+            marginTop: 18,
           }}
         >
           <div className="field" style={{ marginTop: 0 }}>
@@ -433,7 +464,7 @@ function LegacyManagedPushNotificationsPageContent() {
             ))}
           </div>
           <p className="muted">
-            현재 앱: {getAppLabel(selectedApp)}. 역할을 모두 해제하면 이 앱에서 푸시를 허용한 전체 사용자를
+            현재 앱은 {getAppLabel(selectedApp)}입니다. 역할을 모두 해제하면 이 앱에서 푸시를 허용한 전체 사용자를
             보여줍니다.
           </p>
         </div>
@@ -450,7 +481,7 @@ function LegacyManagedPushNotificationsPageContent() {
               display: "grid",
               gap: 12,
               gridTemplateColumns: "minmax(0, 1fr) auto auto",
-              marginTop: 18
+              marginTop: 18,
             }}
           >
             <input
@@ -499,11 +530,11 @@ function LegacyManagedPushNotificationsPageContent() {
         </div>
 
         {pageMessage ? <div className="message">{pageMessage}</div> : null}
-        {isLoadingData ? <div className="message">수신 대상 목록을 불러오는 중입니다...</div> : null}
+        {isLoadingData ? <div className="message">푸시 대상 목록을 불러오는 중입니다...</div> : null}
         {!isLoadingData && recipients.length === 0 ? (
           <div className="message">
-            현재 조건에 맞는 수신자가 없습니다. 아직 해당 앱에서 푸시를 허용하지 않았거나 검색 조건에 맞는
-            사용자가 없을 수 있습니다.
+            현재 조건에 맞는 수신자가 없습니다. 아직 해당 앱에서 푸시를 허용하지 않았거나 검색 조건에 맞는 사용자가
+            없을 수 있습니다.
           </div>
         ) : null}
 
@@ -519,7 +550,7 @@ function LegacyManagedPushNotificationsPageContent() {
                   key={recipient.userId}
                   style={{
                     borderColor: isSelected ? "rgba(31, 78, 121, 0.28)" : undefined,
-                    boxShadow: isSelected ? "0 18px 36px rgba(15, 23, 42, 0.08)" : undefined
+                    boxShadow: isSelected ? "0 18px 36px rgba(15, 23, 42, 0.08)" : undefined,
                   }}
                 >
                   <div className="adminRecordHeader">
@@ -528,14 +559,10 @@ function LegacyManagedPushNotificationsPageContent() {
                         display: "inline-flex",
                         alignItems: "center",
                         gap: 12,
-                        cursor: "pointer"
+                        cursor: "pointer",
                       }}
                     >
-                      <input
-                        checked={isSelected}
-                        type="checkbox"
-                        onChange={() => toggleUser(recipient.userId)}
-                      />
+                      <input checked={isSelected} type="checkbox" onChange={() => toggleUser(recipient.userId)} />
                       <strong>{recipient.displayName}</strong>
                     </label>
                     <span className="badge">{recipient.subscriptionCount}개 기기</span>
@@ -593,23 +620,23 @@ function LegacyManagedPushNotificationsPageContent() {
                   body,
                   url,
                   tag: tag.trim() || undefined,
-                  requireInteraction
-                })
+                  requireInteraction,
+                }),
               });
               setSendMessage(
-                `${response.message} 선택 ${response.result.requestedUsers}명, 전달 사용자 ${response.result.usersWithDelivery}명, 전달 건수 ${response.result.delivered}건`
+                `${response.message} 선택 ${response.result.requestedUsers}명, 전달 사용자 ${response.result.usersWithDelivery}명, 전달 건수 ${response.result.delivered}건`,
               );
             } catch (error) {
-              if (needsAdminReauth(error)) {
-                setRequiresAdminPassword(true);
+              if (isApprovalOtpError(error)) {
+                const nextAuthStatus = await fetchApprovalAuthStatus().catch(() => null);
+                setAuthStatus(nextAuthStatus);
+                setRequiresAdminOtp(true);
                 setRecipients([]);
                 setSummaries([]);
                 setSelectedUserIds([]);
               }
 
-              setSendMessage(
-                error instanceof Error ? error.message : "푸시 알림 발송에 실패했습니다."
-              );
+              setSendMessage(error instanceof Error ? error.message : "푸시 알림 발송에 실패했습니다.");
             } finally {
               setIsSending(false);
             }
@@ -629,7 +656,7 @@ function LegacyManagedPushNotificationsPageContent() {
             style={{
               display: "grid",
               gap: 16,
-              gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))"
+              gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
             }}
           >
             <div className="field">
@@ -648,7 +675,7 @@ function LegacyManagedPushNotificationsPageContent() {
               alignItems: "center",
               gap: 10,
               marginTop: 18,
-              cursor: "pointer"
+              cursor: "pointer",
             }}
           >
             <input
@@ -671,5 +698,3 @@ function LegacyManagedPushNotificationsPageContent() {
     </div>
   );
 }
-
-export { ManagedPushNotificationsPageContentV2 as ManagedPushNotificationsPageContent } from "./ManagedPushNotificationsPageContentV2";

@@ -62,7 +62,7 @@ export function PushNotificationPrompt({
   const [publicKey, setPublicKey] = useState<string | null>(null);
 
   useEffect(() => {
-    if (!isLoggedIn || process.env.NODE_ENV !== "production") {
+    if (!isLoggedIn) {
       return;
     }
 
@@ -113,7 +113,7 @@ export function PushNotificationPrompt({
     };
   }, [app, isLoggedIn]);
 
-  if (!isLoggedIn || process.env.NODE_ENV !== "production") {
+  if (!isLoggedIn) {
     return null;
   }
 

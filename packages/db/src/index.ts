@@ -14,7 +14,9 @@ if (!process.env.VERCEL) {
 
       if (existsSync(packageJsonPath)) {
         try {
-          const packageJson = JSON.parse(readFileSync(packageJsonPath, "utf8")) as {
+          const packageJson = JSON.parse(
+            readFileSync(packageJsonPath, "utf8"),
+          ) as {
             workspaces?: unknown;
           };
 
@@ -39,17 +41,19 @@ if (!process.env.VERCEL) {
   const nodeEnv = process.env.NODE_ENV?.trim() || "development";
   const moduleDir = dirname(fileURLToPath(import.meta.url));
   const workspaceRoot =
-    findWorkspaceRoot(process.cwd()) ?? findWorkspaceRoot(moduleDir) ?? process.cwd();
+    findWorkspaceRoot(process.cwd()) ??
+    findWorkspaceRoot(moduleDir) ??
+    process.cwd();
   const envFiles = [
     `.env.${nodeEnv}.local`,
     ".env.local",
     `.env.${nodeEnv}`,
-    ".env"
+    ".env",
   ];
 
   for (const envFile of envFiles) {
     config({
-      path: join(workspaceRoot, envFile)
+      path: join(workspaceRoot, envFile),
     });
   }
 }
@@ -75,9 +79,12 @@ if (!connectionString) {
   throw new Error("DATABASE_URL is required.");
 }
 
-if (/db\.example\.supabase\.co/i.test(connectionString) || /example\.com/i.test(connectionString)) {
+if (
+  /db\.example\.supabase\.co/i.test(connectionString) ||
+  /example\.com/i.test(connectionString)
+) {
   throw new Error(
-    "DATABASE_URL is still using an example host. Replace it with your real database connection string."
+    "DATABASE_URL is still using an example host. Replace it with your real database connection string.",
   );
 }
 
@@ -90,17 +97,21 @@ function normalizeConnectionString(input: string) {
 }
 
 function isSupabaseHost(hostname: string) {
-  return hostname.endsWith(".supabase.co") || hostname.endsWith(".pooler.supabase.com");
+  return (
+    hostname.endsWith(".supabase.co") ||
+    hostname.endsWith(".pooler.supabase.com")
+  );
 }
 
 function buildPoolOptions(input: string) {
   try {
     const parsed = new URL(input);
     const sslmode = parsed.searchParams.get("sslmode")?.toLowerCase();
-    const useLibpqCompat = parsed.searchParams.get("uselibpqcompat")?.toLowerCase() === "true";
+    const useLibpqCompat =
+      parsed.searchParams.get("uselibpqcompat")?.toLowerCase() === "true";
     const supabaseHost = isSupabaseHost(parsed.hostname);
     const shouldUseSsl = Boolean(
-      supabaseHost || (sslmode && !["disable", "allow"].includes(sslmode))
+      supabaseHost || (sslmode && !["disable", "allow"].includes(sslmode)),
     );
 
     // pg-connection-string consumes sslmode from the connection string and can overwrite
@@ -111,12 +122,14 @@ function buildPoolOptions(input: string) {
     if (!shouldUseSsl) {
       return {
         connectionString: parsed.toString(),
-        ssl: undefined
+        ssl: undefined,
       };
     }
 
     const shouldVerifyCertificate =
-      sslmode === "verify-ca" || sslmode === "verify-full" || sslmode === "verify_identity";
+      sslmode === "verify-ca" ||
+      sslmode === "verify-full" ||
+      sslmode === "verify_identity";
     const shouldSkipCertificateVerification =
       supabaseHost ||
       sslmode === "no-verify" ||
@@ -130,12 +143,14 @@ function buildPoolOptions(input: string) {
         ? {}
         : shouldSkipCertificateVerification
           ? { rejectUnauthorized: false }
-          : {}
+          : {},
     };
   } catch {
     return {
       connectionString: input,
-      ssl: input.includes("sslmode=require") ? { rejectUnauthorized: false } : undefined
+      ssl: input.includes("sslmode=require")
+        ? { rejectUnauthorized: false }
+        : undefined,
     };
   }
 }
@@ -146,7 +161,7 @@ const pool =
   globalThis.__jinmarketPool__ ??
   new Pool({
     connectionString: normalizeConnectionString(poolOptions.connectionString),
-    ssl: poolOptions.ssl
+    ssl: poolOptions.ssl,
   });
 
 if (!globalThis.__jinmarketPool__) {
@@ -159,7 +174,10 @@ function getDbContextStore(): DbContextStore {
   return dbContextStorage.getStore() ?? { client: null, requestContext: null };
 }
 
-async function applyDbContext(client: PoolClient, requestContext: DbRequestContext | null) {
+async function applyDbContext(
+  client: PoolClient,
+  requestContext: DbRequestContext | null,
+) {
   if (!requestContext) {
     return;
   }
@@ -170,23 +188,54 @@ async function applyDbContext(client: PoolClient, requestContext: DbRequestConte
         set_config('app.user_id', $1, true),
         set_config('app.roles', $2, true)
     `,
-    [requestContext.userId ?? "", (requestContext.roles ?? []).join(",")]
+    [requestContext.userId ?? "", (requestContext.roles ?? []).join(",")],
   );
 }
 
-export function runWithDbContext<T>(requestContext: DbRequestContext | null, callback: () => T): T {
+export function runWithDbContext<T>(
+  requestContext: DbRequestContext | null,
+  callback: () => T,
+): T {
   const activeStore = getDbContextStore();
 
   return dbContextStorage.run(
     {
       client: activeStore.client,
-      requestContext
+      requestContext,
     },
-    callback
+    callback,
   );
 }
 
-export async function query<T extends QueryResultRow>(text: string, params: unknown[] = []) {
+export function runWithAdditionalDbRoles<T>(
+  roles: string[],
+  callback: () => T,
+): T {
+  const activeStore = getDbContextStore();
+  const mergedRoles = [
+    ...new Set([...(activeStore.requestContext?.roles ?? []), ...roles]),
+  ];
+
+  return dbContextStorage.run(
+    {
+      client: activeStore.client,
+      requestContext: {
+        userId: activeStore.requestContext?.userId ?? null,
+        roles: mergedRoles,
+      },
+    },
+    callback,
+  );
+}
+
+export function runWithSystemDbContext<T>(callback: () => T): T {
+  return runWithAdditionalDbRoles(["SYSTEM"], callback);
+}
+
+export async function query<T extends QueryResultRow>(
+  text: string,
+  params: unknown[] = [],
+) {
   const store = getDbContextStore();
 
   if (store.client) {
@@ -213,7 +262,9 @@ export async function query<T extends QueryResultRow>(text: string, params: unkn
   }
 }
 
-export async function withTransaction<T>(callback: (client: PoolClient) => Promise<T>) {
+export async function withTransaction<T>(
+  callback: (client: PoolClient) => Promise<T>,
+) {
   const store = getDbContextStore();
   const client = await pool.connect();
 
@@ -223,9 +274,9 @@ export async function withTransaction<T>(callback: (client: PoolClient) => Promi
     const result = await dbContextStorage.run(
       {
         client,
-        requestContext: store.requestContext
+        requestContext: store.requestContext,
       },
-      async () => callback(client)
+      async () => callback(client),
     );
     await client.query("COMMIT");
     return result;

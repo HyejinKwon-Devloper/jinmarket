@@ -10,3 +10,7 @@ export function accountIdentityJoins(identityAlias: string, userAlias = identity
 export function accountLoginIdSql(identityAlias: string) {
   return `COALESCE(${identityAlias}_local.login_id, ${identityAlias}_auth.provider_username)`;
 }
+
+export function safeUserLoginIdSql(userIdExpression: string) {
+  return `private.user_login_id(${userIdExpression})`;
+}

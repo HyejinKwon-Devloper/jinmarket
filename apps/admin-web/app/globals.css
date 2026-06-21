@@ -348,10 +348,34 @@ button:disabled {
 }
 
 .adminDrawerHeader {
+  display: grid;
+  gap: 16px;
+}
+
+.adminDrawerToolbar {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
   gap: 14px;
+}
+
+.adminDrawerTitleBlock {
+  min-width: 0;
+  display: grid;
+  gap: 4px;
+}
+
+.adminDrawerTitle {
+  margin: 0;
+  color: var(--buyer-dark);
+  font-size: clamp(26px, 7vw, 34px);
+  font-weight: 800;
+  line-height: 1.05;
+  letter-spacing: -0.05em;
+}
+
+.adminDrawerHeader > .adminCloseButton {
+  display: none;
 }
 
 .adminProfileCard {
@@ -1392,17 +1416,13 @@ button:disabled {
     gap: 14px;
   }
 
-  .adminDrawerHeader {
-    flex-direction: column;
+  .adminDrawerToolbar {
+    gap: 12px;
   }
 
   .actionRow > *,
   .adminDrawerActions > * {
     width: 100%;
-  }
-
-  .adminCloseButton {
-    align-self: flex-end;
   }
 
   .adminDrawerLegal {

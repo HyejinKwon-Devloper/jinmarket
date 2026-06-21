@@ -1,4 +1,4 @@
-import { withTransaction } from "@jinmarket/db";
+import { query, runWithSystemDbContext, withTransaction } from "@jinmarket/db";
 import type {
   GameAttemptRecord,
   GamePlayResult,
@@ -6,15 +6,17 @@ import type {
 } from "@jinmarket/shared";
 
 import { AppError, isPgUniqueError } from "../errors.js";
+import { decryptOptionalEmail } from "../utils/pii.js";
 import {
   decideRpsResult,
   randomChoice,
   summarizeGamePurchaseSeries
 } from "../utils/rps.js";
 
-import { accountIdentityJoins, accountLoginIdSql } from "./account-sql.js";
+import { safeUserLoginIdSql } from "./account-sql.js";
 import { sendSellerOrderNotification } from "./mail-service.js";
 import { sendPushNotificationToUser } from "./push-service.js";
+import { loadUserIdentityMap } from "./user-identity-service.js";
 
 type LockedProductRow = {
   id: string;
@@ -33,7 +35,6 @@ type OrderRow = {
   product_title: string;
   seller_id: string;
   seller_display_name: string;
-  seller_email: string | null;
   seller_threads_username: string | null;
   buyer_id: string;
   buyer_display_name: string;
@@ -42,6 +43,8 @@ type OrderRow = {
   status: "PENDING_CONTACT" | "CONTACTED" | "TRANSFER_PENDING" | "COMPLETED" | "CANCELLED";
   ordered_at: Date;
 };
+
+type OrderQueryRow = Omit<OrderRow, "seller_display_name" | "buyer_display_name">;
 
 type AttemptRow = {
   id: string;
@@ -142,10 +145,60 @@ function orderSourceLabel(source: OrderRow["source"]) {
   return source === "GAME_CHANCE_WIN" ? "가위바위보 승리" : "즉시 구매";
 }
 
+async function loadVerifiedSellerEmail(userId: string) {
+  return runWithSystemDbContext(async () => {
+    const result = await query<{
+      email_encrypted: string | null;
+      email_iv: string | null;
+      email_auth_tag: string | null;
+      seller_email_verified_at: Date | null;
+    }>(
+      `
+        SELECT
+          email_encrypted,
+          email_iv,
+          email_auth_tag,
+          seller_email_verified_at
+        FROM users
+        WHERE id = $1
+      `,
+      [userId]
+    );
+
+    const row = result.rows[0];
+
+    if (!row?.seller_email_verified_at) {
+      return null;
+    }
+
+    return decryptOptionalEmail(row);
+  });
+}
+
+async function hydrateOrderRow(row: OrderQueryRow): Promise<OrderRow> {
+  const identities = await runWithSystemDbContext(() =>
+    loadUserIdentityMap([row.seller_id, row.buyer_id])
+  );
+  const seller = identities.get(row.seller_id);
+  const buyer = identities.get(row.buyer_id);
+
+  if (!seller || !buyer) {
+    throw new Error("Failed to load order user identities.");
+  }
+
+  return {
+    ...row,
+    seller_display_name: seller.displayName,
+    buyer_display_name: buyer.displayName
+  };
+}
+
 async function notifySellerOrder(row: OrderRow, isFreeShare: boolean) {
+  const sellerEmail = await loadVerifiedSellerEmail(row.seller_id);
+
   try {
     await sendSellerOrderNotification({
-      sellerEmail: row.seller_email,
+      sellerEmail,
       sellerDisplayName: row.seller_display_name,
       sellerLoginId: row.seller_threads_username,
       buyerDisplayName: row.buyer_display_name,
@@ -160,21 +213,21 @@ async function notifySellerOrder(row: OrderRow, isFreeShare: boolean) {
   }
 
   try {
-    await sendPushNotificationToUser({
+    await runWithSystemDbContext(() => sendPushNotificationToUser({
       userId: row.seller_id,
       app: "ADMIN",
       title: isFreeShare ? "무료 나눔 요청이 도착했어요" : "새 주문이 들어왔어요",
       body: `${row.buyer_display_name}님이 ${row.product_title}에 ${orderSourceLabel(row.source)} 요청을 보냈어요.`,
       url: "/orders",
       tag: `seller-order:${row.id}`
-    });
+    }));
   } catch (error) {
     console.error("Failed to send seller push notification", error);
   }
 }
 
 export async function purchaseInstantProduct(userId: string, productId: string) {
-  const result = await withTransaction(async (client) => {
+  const result = await runWithSystemDbContext(() => withTransaction(async (client) => {
     const productResult = await client.query<LockedProductRow>(
       `
         SELECT
@@ -214,7 +267,7 @@ export async function purchaseInstantProduct(userId: string, productId: string) 
     }
 
     try {
-      const orderResult = await client.query<OrderRow>(
+      const orderResult = await client.query<OrderQueryRow>(
         `
           WITH inserted AS (
             INSERT INTO orders (product_id, seller_id, buyer_id, source)
@@ -226,23 +279,13 @@ export async function purchaseInstantProduct(userId: string, productId: string) 
             inserted.product_id,
             $4::text AS product_title,
             inserted.seller_id,
-            seller.display_name AS seller_display_name,
-            CASE
-              WHEN seller.seller_email_verified_at IS NOT NULL THEN seller.email
-              ELSE NULL
-            END AS seller_email,
-            ${accountLoginIdSql("seller")} AS seller_threads_username,
+            ${safeUserLoginIdSql("inserted.seller_id")} AS seller_threads_username,
             inserted.buyer_id,
-            buyer.display_name AS buyer_display_name,
-            ${accountLoginIdSql("buyer")} AS buyer_threads_username,
+            ${safeUserLoginIdSql("inserted.buyer_id")} AS buyer_threads_username,
             inserted.source,
             inserted.status,
             inserted.ordered_at
           FROM inserted
-          JOIN users seller ON seller.id = inserted.seller_id
-          JOIN users buyer ON buyer.id = inserted.buyer_id
-          ${accountIdentityJoins("seller")}
-          ${accountIdentityJoins("buyer")}
         `,
         [product.id, product.seller_id, userId, product.title]
       );
@@ -269,12 +312,13 @@ export async function purchaseInstantProduct(userId: string, productId: string) 
 
       throw error;
     }
-  });
+  }));
 
-  await notifySellerOrder(result.orderRow, result.isFreeShare);
+  const hydratedOrder = await hydrateOrderRow(result.orderRow);
+  await notifySellerOrder(hydratedOrder, result.isFreeShare);
 
   return {
-    order: mapOrder(result.orderRow),
+    order: mapOrder(hydratedOrder),
     isFreeShare: result.isFreeShare
   };
 }
@@ -284,7 +328,7 @@ export async function playGamePurchase(
   productId: string,
   playerChoice: "ROCK" | "PAPER" | "SCISSORS"
 ): Promise<GamePlayResult> {
-  const result = await withTransaction(async (client) => {
+  const result = await runWithSystemDbContext(() => withTransaction(async (client) => {
     const productResult = await client.query<LockedProductRow>(
       `
         SELECT
@@ -379,7 +423,7 @@ export async function playGamePurchase(
     }
 
     try {
-      const orderResult = await client.query<OrderRow>(
+      const orderResult = await client.query<OrderQueryRow>(
         `
           WITH inserted AS (
             INSERT INTO orders (product_id, seller_id, buyer_id, source, game_attempt_id)
@@ -391,23 +435,13 @@ export async function playGamePurchase(
             inserted.product_id,
             $5::text AS product_title,
             inserted.seller_id,
-            seller.display_name AS seller_display_name,
-            CASE
-              WHEN seller.seller_email_verified_at IS NOT NULL THEN seller.email
-              ELSE NULL
-            END AS seller_email,
-            ${accountLoginIdSql("seller")} AS seller_threads_username,
+            ${safeUserLoginIdSql("inserted.seller_id")} AS seller_threads_username,
             inserted.buyer_id,
-            buyer.display_name AS buyer_display_name,
-            ${accountLoginIdSql("buyer")} AS buyer_threads_username,
+            ${safeUserLoginIdSql("inserted.buyer_id")} AS buyer_threads_username,
             inserted.source,
             inserted.status,
             inserted.ordered_at
           FROM inserted
-          JOIN users seller ON seller.id = inserted.seller_id
-          JOIN users buyer ON buyer.id = inserted.buyer_id
-          ${accountIdentityJoins("seller")}
-          ${accountIdentityJoins("buyer")}
         `,
         [product.id, product.seller_id, userId, attemptResult.rows[0].id, product.title]
       );
@@ -445,18 +479,19 @@ export async function playGamePurchase(
 
       throw error;
     }
-  });
+  }));
 
   if (!result.purchased) {
     return result;
   }
 
-  await notifySellerOrder(result.orderRow, result.isFreeShare);
+  const hydratedOrder = await hydrateOrderRow(result.orderRow);
+  await notifySellerOrder(hydratedOrder, result.isFreeShare);
 
   return {
     attempt: result.attempt,
     purchased: true,
-    order: mapOrder(result.orderRow),
+    order: mapOrder(hydratedOrder),
     progress: result.progress,
     message: result.message
   };

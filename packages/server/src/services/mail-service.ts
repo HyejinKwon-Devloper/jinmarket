@@ -1,6 +1,7 @@
 import nodemailer from "nodemailer";
 
 import { env } from "../env.js";
+import { maskEmailAddress } from "../utils/pii.js";
 import { buildTransactionalMailTemplate } from "./mail-templates.js";
 
 let transporter: nodemailer.Transporter | null = null;
@@ -98,7 +99,7 @@ export async function sendSignupVerificationCode(input: {
       text: template.text,
       html: template.html
     },
-    `[signup-verification] skipped email=${input.email} loginId=${input.loginId} reason=smtp-not-configured`
+    `[signup-verification] skipped email=${maskEmailAddress(input.email)} loginId=${input.loginId} reason=smtp-not-configured`
   );
 }
 
@@ -124,7 +125,7 @@ export async function sendSellerPortalVerificationCode(input: {
       text: template.text,
       html: template.html
     },
-    `[seller-email-verification] skipped email=${input.email} loginId=${input.loginId ?? ""} reason=smtp-not-configured`
+    `[seller-email-verification] skipped email=${maskEmailAddress(input.email)} loginId=${input.loginId ?? ""} reason=smtp-not-configured`
   );
 }
 
@@ -150,7 +151,7 @@ export async function sendBuyerEmailVerificationCode(input: {
       text: template.text,
       html: template.html
     },
-    `[buyer-email-verification] skipped email=${input.email} loginId=${input.loginId ?? ""} reason=smtp-not-configured`
+    `[buyer-email-verification] skipped email=${maskEmailAddress(input.email)} loginId=${input.loginId ?? ""} reason=smtp-not-configured`
   );
 }
 
@@ -176,7 +177,7 @@ export async function sendBuyerAccountActivationCode(input: {
       text: template.text,
       html: template.html
     },
-    `[buyer-account-activation] skipped email=${input.email} loginId=${input.loginId} reason=smtp-not-configured`
+    `[buyer-account-activation] skipped email=${maskEmailAddress(input.email)} loginId=${input.loginId} reason=smtp-not-configured`
   );
 }
 
@@ -202,7 +203,7 @@ export async function sendPasswordResetCode(input: {
       text: template.text,
       html: template.html
     },
-    `[password-reset] skipped email=${input.email} loginId=${input.loginId ?? ""} reason=smtp-not-configured`
+    `[password-reset] skipped email=${maskEmailAddress(input.email)} loginId=${input.loginId ?? ""} reason=smtp-not-configured`
   );
 }
 
@@ -228,7 +229,7 @@ export async function sendLegacyAccountActivationCode(input: {
       text: template.text,
       html: template.html
     },
-    `[legacy-account-activation] skipped email=${input.email} loginId=${input.loginId} reason=smtp-not-configured`
+    `[legacy-account-activation] skipped email=${maskEmailAddress(input.email)} loginId=${input.loginId} reason=smtp-not-configured`
   );
 }
 
@@ -303,6 +304,6 @@ export async function sendSellerOrderNotification(input: {
       text: template.text,
       html: template.html
     },
-    `[seller-order-notification] skipped sellerEmail=${input.sellerEmail} productTitle=${input.productTitle} buyer=${buyerLabel} reason=smtp-not-configured`
+    `[seller-order-notification] skipped sellerEmail=${maskEmailAddress(input.sellerEmail)} productTitle=${input.productTitle} buyer=${buyerLabel} reason=smtp-not-configured`
   );
 }
