@@ -15,6 +15,7 @@ import {
   type CreatePriceOfferInput,
   type CreateProductInput,
   type UpdateProductInput,
+  type WebPushSubscriptionPayload,
 } from "../../shared/src/index.js";
 
 import { AppError } from "./errors.js";
@@ -86,6 +87,7 @@ import {
   saveWebPushSubscription,
   sendPushNotificationToUsers,
   sendTestPushNotification,
+  type PushNotificationInput,
 } from "./services/push-service.js";
 import {
   approveSellerAccessRequest,
@@ -160,7 +162,7 @@ const profileImageUpdateSchema = z.object({
 const pushAppSchema = z.enum(pushApps);
 const pushAudienceRoleSchema = z.enum(pushAudienceRoles);
 
-const webPushSubscriptionSchema = z.object({
+const webPushSubscriptionSchema: z.ZodType<WebPushSubscriptionPayload> = z.object({
   endpoint: z.string().trim().url().max(3000),
   expirationTime: z.number().nullable().optional(),
   keys: z.object({
@@ -188,7 +190,7 @@ const adminPushRecipientsQuerySchema = z.object({
   limit: z.coerce.number().int().min(1).max(200).optional(),
 });
 
-const adminPushSendSchema = z.object({
+const adminPushSendSchema: z.ZodType<Omit<PushNotificationInput, "userId"> & { userIds: string[] }> = z.object({
   app: pushAppSchema,
   userIds: z.array(z.string().uuid()).min(1).max(200),
   title: z.string().trim().min(1).max(80),
