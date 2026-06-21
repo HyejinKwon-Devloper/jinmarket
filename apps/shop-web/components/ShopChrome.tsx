@@ -69,6 +69,12 @@ const navItems: NavItem[] = [
     isActive: (pathname) =>
       pathname === "/my/orders" || pathname.startsWith("/my/orders/"),
   },
+  {
+    href: "/game",
+    label: "미니게임",
+    description: "타이밍 스톱 챌린지로 잠깐 쉬어가요.",
+    isActive: (pathname) => pathname === "/game" || pathname.startsWith("/game/"),
+  },
 ];
 
 function getCurrentNavItem(pathname: string) {
