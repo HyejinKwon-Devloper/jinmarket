@@ -14,14 +14,14 @@ const sharedOgImage = `${shopAppUrl.replace(/\/$/, "")}/header.png`;
 
 export const metadata: Metadata = {
   metadataBase: new URL(adminAppUrl),
-  applicationName: "JINMARKET Admin",
+  applicationName: "Jinmarket Seller",
   manifest: "/manifest.webmanifest",
   title: "JINMARKET 판매자 센터",
   description: "상품, 이벤트, 주문을 한곳에서 관리하는 JINMARKET 판매자용 웹앱입니다.",
   appleWebApp: {
     capable: true,
     statusBarStyle: "default",
-    title: "JINMARKET Admin",
+    title: "Jinmarket Seller",
   },
   formatDetection: {
     telephone: false,

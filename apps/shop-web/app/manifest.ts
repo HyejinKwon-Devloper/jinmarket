@@ -3,8 +3,8 @@ import type { MetadataRoute } from "next";
 export default function manifest(): MetadataRoute.Manifest {
   return {
     id: "/",
-    name: "Jinmarket buyer",
-    short_name: "Jinmarket buyer",
+    name: "Jinmarket Buyer",
+    short_name: "Jinmarket Buyer",
     description:
       "진마켓 구매자 사이트를 홈 화면에 설치해 더 빠르게 둘러보세요.",
     start_url: "/",

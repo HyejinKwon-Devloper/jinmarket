@@ -9,14 +9,14 @@ const shopAppUrl =
 
 export const metadata: Metadata = {
   metadataBase: new URL(shopAppUrl),
-  applicationName: "JINMARKET",
+  applicationName: "Jinmarket Buyer",
   manifest: "/manifest.webmanifest",
   title: "JINMARKET 구매자 사이트",
   description: "굿즈 거래를 더 빠르게 둘러볼 수 있는 JINMARKET 구매자 웹앱입니다.",
   appleWebApp: {
     capable: true,
     statusBarStyle: "default",
-    title: "JINMARKET",
+    title: "Jinmarket Buyer",
   },
   formatDetection: {
     telephone: false,
