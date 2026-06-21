@@ -6,6 +6,8 @@ import { z } from "zod";
 import {
   type CreateEventInput,
   gameChoices,
+  pushApps,
+  pushAudienceRoles,
   type CreatePriceOfferInput,
   type CreateProductInput,
   type UpdateProductInput
@@ -68,6 +70,16 @@ import {
 } from "./services/product-service.js";
 import { playGamePurchase, purchaseInstantProduct } from "./services/purchase-service.js";
 import {
+  getPublicWebPushKey,
+  isWebPushConfigured,
+  listPushAudienceSummaries,
+  listPushRecipients,
+  removeWebPushSubscription,
+  saveWebPushSubscription,
+  sendPushNotificationToUsers,
+  sendTestPushNotification
+} from "./services/push-service.js";
+import {
   approveSellerAccessRequest,
   createSellerAccessRequest,
   getSellerAccessOverview,
@@ -122,6 +134,47 @@ const sellerEmailVerifySchema = z.object({
 
 const profileImageUpdateSchema = z.object({
   profileImageUrl: z.string().trim().url().max(2048).nullable()
+});
+
+const pushAppSchema = z.enum(pushApps);
+const pushAudienceRoleSchema = z.enum(pushAudienceRoles);
+
+const webPushSubscriptionSchema = z.object({
+  endpoint: z.string().trim().url().max(3000),
+  expirationTime: z.number().nullable().optional(),
+  keys: z.object({
+    p256dh: z.string().trim().min(1),
+    auth: z.string().trim().min(1)
+  })
+});
+
+const pushSubscriptionUpsertSchema = z.object({
+  app: pushAppSchema,
+  subscription: webPushSubscriptionSchema
+});
+
+const pushSubscriptionDeleteSchema = z.object({
+  endpoint: z.string().trim().url().max(3000)
+});
+
+const pushSubscriptionTestSchema = z.object({
+  app: pushAppSchema
+});
+
+const adminPushRecipientsQuerySchema = z.object({
+  app: pushAppSchema,
+  search: z.string().trim().max(120).optional(),
+  limit: z.coerce.number().int().min(1).max(200).optional()
+});
+
+const adminPushSendSchema = z.object({
+  app: pushAppSchema,
+  userIds: z.array(z.string().uuid()).min(1).max(200),
+  title: z.string().trim().min(1).max(80),
+  body: z.string().trim().min(1).max(240),
+  url: z.string().trim().min(1).max(500),
+  tag: z.string().trim().max(120).optional(),
+  requireInteraction: z.boolean().optional()
 });
 
 const buyerAccountActivationSchema = z.object({
@@ -272,6 +325,47 @@ function getOptionalString(value: unknown) {
   return undefined;
 }
 
+function getStringValues(value: unknown) {
+  if (typeof value === "string" && value.length > 0) {
+    return [value];
+  }
+
+  if (Array.isArray(value)) {
+    return value.filter((item): item is string => typeof item === "string" && item.length > 0);
+  }
+
+  return [];
+}
+
+function parsePushAudienceRoleFilters(value: unknown) {
+  const uniqueRoles = new Set<z.infer<typeof pushAudienceRoleSchema>>();
+
+  for (const rawValue of getStringValues(value)) {
+    for (const token of rawValue.split(",")) {
+      const normalized = token.trim();
+
+      if (normalized) {
+        uniqueRoles.add(pushAudienceRoleSchema.parse(normalized));
+      }
+    }
+  }
+
+  return [...uniqueRoles];
+}
+
+function isValidPushUrl(value: string) {
+  if (value.startsWith("/")) {
+    return true;
+  }
+
+  try {
+    const parsed = new URL(value);
+    return parsed.protocol === "https:" || parsed.protocol === "http:";
+  } catch {
+    return false;
+  }
+}
+
 function asyncHandler(
   handler: (request: AuthedRequest, response: Response, next: NextFunction) => Promise<void>
 ) {
@@ -358,6 +452,13 @@ export function createApp() {
 
   app.get("/health", (_request, response) => {
     response.json({ ok: true });
+  });
+
+  app.get("/push/config", (_request, response) => {
+    response.json({
+      configured: isWebPushConfigured(),
+      publicKey: getPublicWebPushKey()
+    });
   });
 
   app.get("/auth/threads/login", (request, response) => {
@@ -590,6 +691,58 @@ export function createApp() {
   );
 
   app.post(
+    "/me/push-subscriptions",
+    asyncHandler(async (request, response) => {
+      const user = requireAuth(request);
+      const parsed = pushSubscriptionUpsertSchema.parse(request.body);
+      await saveWebPushSubscription({
+        userId: user.id,
+        app: parsed.app,
+        subscription: parsed.subscription,
+        userAgent: request.get("user-agent")
+      });
+      response.status(201).json({
+        ok: true,
+        message: "푸시 알림이 활성화되었습니다."
+      });
+    })
+  );
+
+  app.delete(
+    "/me/push-subscriptions",
+    asyncHandler(async (request, response) => {
+      const user = requireAuth(request);
+      const parsed = pushSubscriptionDeleteSchema.parse(request.body);
+      await removeWebPushSubscription(user.id, parsed.endpoint);
+      response.json({
+        ok: true,
+        message: "푸시 알림이 해제되었습니다."
+      });
+    })
+  );
+
+  app.post(
+    "/me/push-subscriptions/test",
+    asyncHandler(async (request, response) => {
+      const user = requireAuth(request);
+      const parsed = pushSubscriptionTestSchema.parse(request.body);
+      const result = await sendTestPushNotification(user.id, parsed.app);
+      const message =
+        result.delivered > 0
+          ? "테스트 알림을 전송했습니다."
+          : result.skipped === "vapid-not-configured"
+            ? "웹 푸시 VAPID 키가 아직 설정되지 않았습니다."
+            : "활성화된 푸시 구독이 없습니다.";
+
+      response.json({
+        ok: true,
+        result,
+        message
+      });
+    })
+  );
+
+  app.post(
     "/me/profile-image/sign",
     asyncHandler(async (request, response) => {
       const user = requireAuth(request);
@@ -678,6 +831,63 @@ export function createApp() {
     asyncHandler(async (request, response) => {
       requireApprovalAdmin(request);
       response.json({ items: await listPendingSellerAccessRequests() });
+    })
+  );
+
+  app.get(
+    "/admin/push/audiences",
+    asyncHandler(async (request, response) => {
+      requireApprovalAdmin(request);
+      const { app } = adminPushRecipientsQuerySchema.parse(request.query);
+      response.json({
+        app,
+        items: await listPushAudienceSummaries(app)
+      });
+    })
+  );
+
+  app.get(
+    "/admin/push/recipients",
+    asyncHandler(async (request, response) => {
+      requireApprovalAdmin(request);
+      const parsed = adminPushRecipientsQuerySchema.parse(request.query);
+      const roles = parsePushAudienceRoleFilters(request.query.roles);
+      response.json({
+        app: parsed.app,
+        roles,
+        items: await listPushRecipients({
+          app: parsed.app,
+          roles,
+          search: parsed.search,
+          limit: parsed.limit
+        })
+      });
+    })
+  );
+
+  app.post(
+    "/admin/push/send",
+    asyncHandler(async (request, response) => {
+      requireApprovalAdmin(request);
+      const parsed = adminPushSendSchema.parse(request.body);
+
+      if (!isValidPushUrl(parsed.url)) {
+        throw new AppError("알림을 눌렀을 때 이동할 경로를 올바르게 입력해 주세요.", 400);
+      }
+
+      const result = await sendPushNotificationToUsers(parsed);
+      const message =
+        result.delivered > 0
+          ? `${result.usersWithDelivery}명에게 푸시를 전송했습니다.`
+          : result.usersSkippedDueToConfig > 0
+            ? "웹 푸시 VAPID 키가 아직 설정되지 않았습니다."
+            : "선택한 사용자 중 활성화된 푸시 구독이 없습니다.";
+
+      response.status(201).json({
+        ok: true,
+        result,
+        message
+      });
     })
   );
 

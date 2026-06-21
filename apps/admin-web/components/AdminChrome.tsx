@@ -12,6 +12,7 @@ import {
   requestJson,
 } from "../lib/api";
 import { PwaInstallPrompt } from "./PwaInstallPrompt";
+import { PushNotificationPrompt } from "./PushNotificationPrompt";
 import {
   ArrowRightIcon,
   ChevronRightIcon,
@@ -67,6 +68,12 @@ const navigationItems: NavigationItem[] = [
     href: "/seller-approval",
     label: "판매자 승인",
     description: "판매 권한 요청을 검토합니다.",
+    adminOnly: true,
+  },
+  {
+    href: "/push",
+    label: "푸시 발송",
+    description: "관리자 인증 후 대상 사용자와 앱을 골라 운영 푸시를 보냅니다.",
     adminOnly: true,
   },
 ];
@@ -350,6 +357,7 @@ export function AdminChrome({ children }: { children: React.ReactNode }) {
 
               <div className="adminDrawerActions">
                 <PwaInstallPrompt />
+                <PushNotificationPrompt app="ADMIN" isLoggedIn={Boolean(user)} />
                 <a
                   className="ghostButton"
                   href={shopAppUrl}

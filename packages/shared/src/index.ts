@@ -34,6 +34,11 @@ export type SellerAccessRequestStatus = (typeof sellerAccessRequestStatuses)[num
 export const eventRegistrationModes = ["MANUAL", "SHOP_ENTRY"] as const;
 export type EventRegistrationMode = (typeof eventRegistrationModes)[number];
 
+export const pushApps = ["SHOP", "ADMIN"] as const;
+export type PushApp = (typeof pushApps)[number];
+export const pushAudienceRoles = ["ADMIN", "SELLER", "BUYER"] as const;
+export type PushAudienceRole = (typeof pushAudienceRoles)[number];
+
 export interface SessionUser {
   id: string;
   displayName: string;
@@ -307,4 +312,29 @@ export interface SellerAccessOverview {
   canSell: boolean;
   isAdmin: boolean;
   latestRequest?: SellerAccessRequestRecord | null;
+}
+
+export interface WebPushSubscriptionPayload {
+  endpoint: string;
+  expirationTime?: number | null;
+  keys: {
+    p256dh: string;
+    auth: string;
+  };
+}
+
+export interface PushAudienceSummary {
+  role: PushAudienceRole;
+  totalUsers: number;
+  subscribedUsers: number;
+}
+
+export interface PushRecipientRecord {
+  userId: string;
+  displayName: string;
+  loginId: string | null;
+  email: string | null;
+  roles: PushAudienceRole[];
+  subscriptionCount: number;
+  lastSeenAt: string | null;
 }

@@ -14,6 +14,7 @@ import {
 
 import { accountIdentityJoins, accountLoginIdSql } from "./account-sql.js";
 import { sendSellerOrderNotification } from "./mail-service.js";
+import { sendPushNotificationToUser } from "./push-service.js";
 
 type LockedProductRow = {
   id: string;
@@ -156,6 +157,19 @@ async function notifySellerOrder(row: OrderRow, isFreeShare: boolean) {
     });
   } catch (error) {
     console.error("Failed to send seller order notification", error);
+  }
+
+  try {
+    await sendPushNotificationToUser({
+      userId: row.seller_id,
+      app: "ADMIN",
+      title: isFreeShare ? "무료 나눔 요청이 도착했어요" : "새 주문이 들어왔어요",
+      body: `${row.buyer_display_name}님이 ${row.product_title}에 ${orderSourceLabel(row.source)} 요청을 보냈어요.`,
+      url: "/orders",
+      tag: `seller-order:${row.id}`
+    });
+  } catch (error) {
+    console.error("Failed to send seller push notification", error);
   }
 }
 
