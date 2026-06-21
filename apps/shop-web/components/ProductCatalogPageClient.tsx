@@ -92,9 +92,9 @@ export function ProductCatalogPageClient({
   }, [sections, selectedSellerKey]);
 
   return (
-    <div className="space-y-4 sm:space-y-6">
+    <div className="space-y-4 px-1 sm:space-y-6 sm:px-0">
       <section className="overflow-hidden rounded-[26px] border border-[var(--buyer-border)] bg-white shadow-[0_18px_42px_rgba(15,23,42,0.06)] sm:rounded-[32px] sm:shadow-[0_24px_60px_rgba(15,23,42,0.06)]">
-        <div className="space-y-4 px-3.5 py-4 sm:px-7 sm:py-6">
+        <div className="space-y-4 px-4 py-4 sm:px-7 sm:py-6">
           <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
             <div className="space-y-2.5">
               <div className="space-y-2">

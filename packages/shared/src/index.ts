@@ -44,6 +44,35 @@ export interface SessionUser {
   roles: string[];
 }
 
+const cloudinaryProfileImageHostSuffix = "res.cloudinary.com";
+
+export function sanitizeProfileImageUrl(rawProfileImageUrl: string | null | undefined) {
+  if (typeof rawProfileImageUrl !== "string") {
+    return null;
+  }
+
+  const normalized = rawProfileImageUrl.trim();
+
+  if (!normalized) {
+    return null;
+  }
+
+  try {
+    const parsed = new URL(normalized);
+    const isCloudinaryHost =
+      parsed.hostname === cloudinaryProfileImageHostSuffix ||
+      parsed.hostname.endsWith(`.${cloudinaryProfileImageHostSuffix}`);
+
+    if (parsed.protocol !== "https:" || !isCloudinaryHost) {
+      return null;
+    }
+
+    return parsed.toString();
+  } catch {
+    return null;
+  }
+}
+
 export interface ProductImage {
   id?: string;
   imageUrl: string;

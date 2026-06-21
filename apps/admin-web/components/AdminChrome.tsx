@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
-import type { SessionUser } from "@jinmarket/shared";
+import { sanitizeProfileImageUrl, type SessionUser } from "@jinmarket/shared";
 
 import {
   fetchCurrentUser,
@@ -130,10 +130,15 @@ function getUserStatus(user: SessionUser | null) {
 export function AdminChrome({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<SessionUser | null>(null);
   const [navOpen, setNavOpen] = useState(false);
+  const [profileImageFailed, setProfileImageFailed] = useState(false);
   const pathname = usePathname();
   const isImmersiveRoute =
     pathname === "/random-game" || pathname.startsWith("/random-game/");
   const currentItem = resolveCurrentItem(pathname);
+  const safeProfileImageUrl = useMemo(
+    () => sanitizeProfileImageUrl(user?.profileImageUrl),
+    [user?.profileImageUrl],
+  );
 
   const visibleNavigationItems = useMemo(
     () =>
@@ -171,6 +176,10 @@ export function AdminChrome({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     setNavOpen(false);
   }, [pathname]);
+
+  useEffect(() => {
+    setProfileImageFailed(false);
+  }, [safeProfileImageUrl]);
 
   useEffect(() => {
     if (!navOpen || typeof window === "undefined") {
@@ -258,11 +267,12 @@ export function AdminChrome({ children }: { children: React.ReactNode }) {
             <div className="adminDrawerHeader">
               <div className="adminProfileCard">
                 <span aria-hidden="true" className="adminAvatar">
-                  {user?.profileImageUrl ? (
+                  {safeProfileImageUrl && !profileImageFailed ? (
                     <img
                       alt=""
                       className="adminAvatarImage"
-                      src={user.profileImageUrl}
+                      src={safeProfileImageUrl}
+                      onError={() => setProfileImageFailed(true)}
                     />
                   ) : (
                     getUserInitial(user)

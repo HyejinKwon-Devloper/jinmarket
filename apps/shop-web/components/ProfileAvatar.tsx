@@ -1,5 +1,8 @@
 "use client";
 
+import { sanitizeProfileImageUrl } from "@jinmarket/shared";
+import { useEffect, useMemo, useState } from "react";
+
 import { cn } from "../lib/ui";
 
 function getProfileInitial(displayName: string) {
@@ -27,8 +30,14 @@ export function ProfileAvatar({
   size = "lg",
 }: ProfileAvatarProps) {
   const initial = getProfileInitial(displayName);
+  const safeImageUrl = useMemo(() => sanitizeProfileImageUrl(imageUrl), [imageUrl]);
+  const [hasImageError, setHasImageError] = useState(false);
 
-  if (imageUrl) {
+  useEffect(() => {
+    setHasImageError(false);
+  }, [safeImageUrl]);
+
+  if (safeImageUrl && !hasImageError) {
     return (
       <span
         className={cn(
@@ -42,7 +51,8 @@ export function ProfileAvatar({
           className="h-full w-full object-cover"
           decoding="async"
           loading="lazy"
-          src={imageUrl}
+          src={safeImageUrl}
+          onError={() => setHasImageError(true)}
         />
       </span>
     );
@@ -61,4 +71,3 @@ export function ProfileAvatar({
     </span>
   );
 }
-

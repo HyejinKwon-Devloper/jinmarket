@@ -159,7 +159,7 @@ export function ShopChrome({ children }: { children: React.ReactNode }) {
     <div className="flex min-h-screen flex-col bg-[var(--buyer-canvas)] text-[var(--buyer-ink)]">
       <header className="sticky top-0 z-30 border-b border-[var(--buyer-border)] bg-white/90 backdrop-blur">
         <div className="safe-area-top safe-area-inline">
-          <div className="mx-auto flex max-w-6xl items-center justify-between gap-4 px-3.5 py-3.5 sm:px-6 sm:py-4">
+          <div className="mx-auto flex max-w-6xl items-center justify-between gap-4 px-4 py-3.5 sm:px-6 sm:py-4">
             <div className="min-w-0 space-y-1.5">
               <p className="text-[10px] font-semibold uppercase tracking-[0.22em] text-[var(--buyer-primary)] sm:text-xs">
                 Jinmarket Buyer
@@ -380,7 +380,7 @@ export function ShopChrome({ children }: { children: React.ReactNode }) {
         </div>
       </div>
 
-      <main className="safe-area-inline mx-auto w-full max-w-6xl flex-1 px-3.5 py-5 sm:px-6 sm:py-8">
+      <main className="safe-area-inline mx-auto w-full max-w-6xl flex-1 px-4 py-5 sm:px-6 sm:py-8">
         {children}
       </main>
 
