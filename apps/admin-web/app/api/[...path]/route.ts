@@ -1,3 +1,4 @@
+import type { IncomingHttpHeaders } from "node:http";
 import type { NextRequest } from "next/server";
 
 import {
