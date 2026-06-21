@@ -12,6 +12,7 @@
     }
   },
   "scripts": {
+    "prebuild": "npm --prefix ../.. run build --workspace @jinmarket/shared && npm --prefix ../.. run build --workspace @jinmarket/db",
     "build": "tsc --project tsconfig.json",
     "typecheck": "tsc --project tsconfig.json --noEmit"
   },
