@@ -119,6 +119,7 @@ const envSchema = z.object({
   API_PORT: z.coerce.number().default(4000),
   SESSION_COOKIE_NAME: z.string().default("jm_session"),
   SESSION_SECRET: z.string().min(1).default("change-me"),
+  PII_ENCRYPTION_SECRET: z.string().default(""),
   BUYER_ACCOUNT_ACTIVATION_TOKEN: z.string().default(""),
   LEGACY_ACCOUNT_ACTIVATION_TOKEN: z.string().default(""),
   SELLER_APPROVAL_ADMIN_LOGIN_ID: z.string().default(""),
@@ -166,6 +167,10 @@ export const sellerApprovalAdminLoginIds = new Set(
 
 if (process.env.NODE_ENV === "production" && env.SESSION_SECRET.trim() === "change-me") {
   throw new Error("SESSION_SECRET must be set to a strong random value in production.");
+}
+
+if (process.env.NODE_ENV === "production" && !env.PII_ENCRYPTION_SECRET.trim()) {
+  throw new Error("PII_ENCRYPTION_SECRET must be set in production.");
 }
 
 if (sellerApprovalAdminLoginIds.size > 0 && !env.SELLER_APPROVAL_TOTP_ENCRYPTION_SECRET.trim()) {

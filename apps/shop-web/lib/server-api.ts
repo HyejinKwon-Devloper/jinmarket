@@ -7,7 +7,7 @@ import type {
   SessionUser,
 } from "@jinmarket/shared";
 
-import { apiProxyTarget, sendNodeRequest } from "./proxy-http";
+import { getApiProxyTarget, sendNodeRequest } from "./proxy-http";
 
 export class ServerApiError extends Error {
   constructor(
@@ -25,7 +25,7 @@ async function requestServerJson<T>(
     query?: Record<string, string | number | boolean | null | undefined>;
   } = {},
 ) {
-  const target = new URL(`${apiProxyTarget}${path}`);
+  const target = new URL(`${getApiProxyTarget()}${path}`);
 
   for (const [key, value] of Object.entries(options.query ?? {})) {
     if (value === null || value === undefined) {

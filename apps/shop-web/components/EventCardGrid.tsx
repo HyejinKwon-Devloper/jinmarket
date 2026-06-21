@@ -69,7 +69,9 @@ export function EventCardGrid({
             <div className="cardBody">
               <div className="cardSummary">
                 <h2 className="cardTitle">{item.title}</h2>
-                <p className="cardSellerLabel">진행자 {item.sellerDisplayName}</p>
+                <p className="cardSellerLabel">
+                  진행자 {item.sellerDisplayName}
+                </p>
               </div>
 
               <div className="cardMeta">

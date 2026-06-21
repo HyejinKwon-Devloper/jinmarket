@@ -78,12 +78,6 @@ const navigationItems: NavigationItem[] = [
   },
 ];
 
-const legalItems = [
-  { href: "/privacy", label: "개인정보 처리방침" },
-  { href: "/terms", label: "이용약관" },
-  { href: "/data-deletion", label: "데이터 삭제 안내" },
-] as const;
-
 function resolveCurrentItem(pathname: string) {
   const sortedItems = [...navigationItems].sort(
     (left, right) => right.href.length - left.href.length,
@@ -408,14 +402,6 @@ export function AdminChrome({ children }: { children: React.ReactNode }) {
             </nav>
 
             <div className="adminDrawerFooter">
-              <div className="adminDrawerLegal">
-                {legalItems.map((item) => (
-                  <Link key={item.href} href={item.href}>
-                    {item.label}
-                  </Link>
-                ))}
-              </div>
-
               <div className="adminDrawerActions">
                 <PwaInstallPromptUnified
                   className="min-h-11 px-4"
@@ -467,11 +453,6 @@ export function AdminChrome({ children }: { children: React.ReactNode }) {
               className="min-h-10 px-3.5"
               showDismissButton={false}
             />
-            {legalItems.map((item) => (
-              <Link key={item.href} href={item.href}>
-                {item.label}
-              </Link>
-            ))}
           </div>
         </div>
       </footer>

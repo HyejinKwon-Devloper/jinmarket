@@ -1,7 +1,7 @@
 import type { IncomingHttpHeaders } from "node:http";
 import type { NextRequest } from "next/server";
 
-import { apiProxyTarget, sendNodeRequest } from "../../../lib/proxy-http";
+import { getApiProxyTarget, sendNodeRequest } from "../../../lib/proxy-http";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -11,7 +11,7 @@ type RouteContext = {
 };
 
 function buildTargetUrl(path: string[], request: NextRequest) {
-  const target = new URL(`${apiProxyTarget}/${path.join("/")}`);
+  const target = new URL(`${getApiProxyTarget()}/${path.join("/")}`);
   request.nextUrl.searchParams.forEach((value, key) => {
     target.searchParams.append(key, value);
   });

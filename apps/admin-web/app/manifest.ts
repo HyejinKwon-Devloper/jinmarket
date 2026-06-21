@@ -3,9 +3,10 @@ import type { MetadataRoute } from "next";
 export default function manifest(): MetadataRoute.Manifest {
   return {
     id: "/",
-    name: "JINMARKET Admin",
-    short_name: "JM Admin",
-    description: "JINMARKET 판매자 센터를 홈 화면에 설치해 상품과 주문을 더 빠르게 관리해 보세요.",
+    name: "Jinmarket Seller",
+    short_name: "Jinmarket Seller",
+    description:
+      "JINMARKET 판매자 센터를 홈 화면에 설치해 상품과 주문을 더 빠르게 관리해 보세요.",
     start_url: "/products",
     scope: "/",
     display: "standalone",
