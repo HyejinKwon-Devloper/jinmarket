@@ -11,10 +11,10 @@
     "dev:shop": "npm run dev --workspace @jinmarket/shop-web",
     "dev:admin": "npm run dev --workspace @jinmarket/admin-web",
     "push:vapid": "node scripts/generate-vapid-keys.mjs",
-    "build:api": "npm run build --workspace @jinmarket/api",
-    "build:admin-web": "npm run build --workspace @jinmarket/admin-web",
-    "build:shop-web": "npm run build --workspace @jinmarket/shared && npm run build --workspace @jinmarket/shop-web",
-    "build": "npm run build --workspace @jinmarket/shared && npm run build --workspace @jinmarket/db && npm run build --workspace @jinmarket/server && npm run build --workspace @jinmarket/api && npm run build --workspace @jinmarket/shop-web && npm run build --workspace @jinmarket/admin-web",
+    "build:api": "node scripts/run-workspace-build.mjs api",
+    "build:admin-web": "node scripts/run-workspace-build.mjs admin-web",
+    "build:shop-web": "node scripts/run-workspace-build.mjs shop-web",
+    "build": "node scripts/run-workspace-build.mjs",
     "typecheck": "npm run typecheck --workspace @jinmarket/shared && npm run typecheck --workspace @jinmarket/db && npm run typecheck --workspace @jinmarket/server && npm run typecheck --workspace @jinmarket/api && npm run typecheck --workspace @jinmarket/shop-web && npm run typecheck --workspace @jinmarket/admin-web"
   },
   "devDependencies": {
