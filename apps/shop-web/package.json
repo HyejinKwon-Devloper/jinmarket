@@ -6,6 +6,7 @@
     "dev:plain": "next dev",
     "dev": "node ../../scripts/next-dev-https.mjs --dir . --port 3000",
     "dev:https": "node ../../scripts/next-dev-https.mjs --dir . --port 3000",
+    "prebuild": "npm --prefix ../.. run build --workspace @jinmarket/shared",
     "build": "next build",
     "start": "next start",
     "typecheck": "tsc --project tsconfig.json --noEmit"
