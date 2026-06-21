@@ -162,7 +162,7 @@ const profileImageUpdateSchema = z.object({
 const pushAppSchema = z.enum(pushApps);
 const pushAudienceRoleSchema = z.enum(pushAudienceRoles);
 
-const webPushSubscriptionSchema: z.ZodType<WebPushSubscriptionPayload> = z.object({
+const webPushSubscriptionSchema = z.object({
   endpoint: z.string().trim().url().max(3000),
   expirationTime: z.number().nullable().optional(),
   keys: z.object({
@@ -190,7 +190,7 @@ const adminPushRecipientsQuerySchema = z.object({
   limit: z.coerce.number().int().min(1).max(200).optional(),
 });
 
-const adminPushSendSchema: z.ZodType<Omit<PushNotificationInput, "userId"> & { userIds: string[] }> = z.object({
+const adminPushSendSchema = z.object({
   app: pushAppSchema,
   userIds: z.array(z.string().uuid()).min(1).max(200),
   title: z.string().trim().min(1).max(80),
@@ -1125,7 +1125,7 @@ export function createApp() {
       await saveWebPushSubscription({
         userId: user.id,
         app: parsed.app,
-        subscription: parsed.subscription,
+        subscription: parsed.subscription as WebPushSubscriptionPayload,
         userAgent: request.get("user-agent"),
       });
       response.status(201).json({
@@ -1358,7 +1358,7 @@ export function createApp() {
         );
       }
 
-      const result = await sendPushNotificationToUsers(parsed);
+      const result = await sendPushNotificationToUsers(parsed as Omit<PushNotificationInput, "userId"> & { userIds: string[] });
       const message =
         result.delivered > 0
           ? `${result.usersWithDelivery}명에게 푸시를 전송했습니다.`
