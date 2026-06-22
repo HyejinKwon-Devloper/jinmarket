@@ -92,7 +92,7 @@ function buildPushPayload(input: Omit<PushNotificationInput, "userId" | "app">) 
     tag: input.tag,
     requireInteraction: input.requireInteraction ?? false,
     icon: "/icon-192.png",
-    badge: "/icon-192.png"
+    badge: "/notification-badge.png"
   });
 }
 

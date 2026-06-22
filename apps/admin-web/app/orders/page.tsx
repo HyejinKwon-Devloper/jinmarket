@@ -11,6 +11,7 @@ import { ManagedSellerAccessStatusPanel } from "../../components/ManagedSellerAc
 import {
   fetchCurrentUser,
   fetchSellerAccessOverview,
+  formatPrice,
   hasSellerAccess,
   requestJson,
 } from "../../lib/api";
@@ -216,6 +217,10 @@ export default function AdminOrdersPage() {
                 </div>
 
                 <div className="adminOrdersGrid">
+                  <div className="adminMetaItem">
+                    <span className="adminMetaLabel">등록 금액</span>
+                    <span>{formatPrice(item.productPriceKrw)}</span>
+                  </div>
                   <div className="adminMetaItem">
                     <span className="adminMetaLabel">구매 방식</span>
                     <span>{orderSourceLabel(item.source)}</span>

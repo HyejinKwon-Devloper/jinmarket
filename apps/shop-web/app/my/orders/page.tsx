@@ -3,6 +3,7 @@ export const dynamic = "force-dynamic";
 import Link from "next/link";
 import type { OrderRecord } from "@jinmarket/shared";
 
+import { formatPrice } from "../../../lib/api";
 import { readCurrentUser, readMyOrders } from "../../../lib/server-api";
 
 function orderSourceLabel(source: OrderRecord["source"]) {
@@ -67,6 +68,10 @@ export default async function MyOrdersPage() {
                 </p>
               </div>
               <div className="orderMetaGrid">
+                <div className="orderMetaItem">
+                  <span className="detailMetaLabel">등록 금액</span>
+                  <span>{formatPrice(item.productPriceKrw)}</span>
+                </div>
                 <div className="orderMetaItem">
                   <span className="detailMetaLabel">구매 경로</span>
                   <span>{orderSourceLabel(item.source)}</span>

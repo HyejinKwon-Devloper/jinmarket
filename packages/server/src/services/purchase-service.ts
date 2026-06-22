@@ -21,6 +21,7 @@ import { loadUserIdentityMap } from "./user-identity-service.js";
 type LockedProductRow = {
   id: string;
   title: string;
+  price_krw: number;
   seller_id: string;
   status: "DRAFT" | "OPEN" | "SOLD_OUT" | "CANCELLED";
   purchase_type: "INSTANT_BUY" | "GAME_CHANCE";
@@ -33,6 +34,7 @@ type OrderRow = {
   id: string;
   product_id: string;
   product_title: string;
+  product_price_krw: number;
   seller_id: string;
   seller_display_name: string;
   seller_threads_username: string | null;
@@ -61,6 +63,7 @@ function mapOrder(row: OrderRow): OrderRecord {
     id: row.id,
     productId: row.product_id,
     productTitle: row.product_title,
+    productPriceKrw: row.product_price_krw,
     sellerId: row.seller_id,
     sellerDisplayName: row.seller_display_name,
     sellerThreadsUsername: row.seller_threads_username,
@@ -204,6 +207,7 @@ async function notifySellerOrder(row: OrderRow, isFreeShare: boolean) {
       buyerDisplayName: row.buyer_display_name,
       buyerLoginId: row.buyer_threads_username,
       productTitle: row.product_title,
+      productPriceKrw: row.product_price_krw,
       orderTypeLabel: orderSourceLabel(row.source),
       orderedAt: row.ordered_at.toISOString(),
       isFreeShare
@@ -233,6 +237,7 @@ export async function purchaseInstantProduct(userId: string, productId: string) 
         SELECT
           id,
           title,
+          price_krw,
           seller_id,
           status,
           purchase_type,
@@ -278,6 +283,7 @@ export async function purchaseInstantProduct(userId: string, productId: string) 
             inserted.id,
             inserted.product_id,
             $4::text AS product_title,
+            $5::integer AS product_price_krw,
             inserted.seller_id,
             ${safeUserLoginIdSql("inserted.seller_id")} AS seller_threads_username,
             inserted.buyer_id,
@@ -287,7 +293,7 @@ export async function purchaseInstantProduct(userId: string, productId: string) 
             inserted.ordered_at
           FROM inserted
         `,
-        [product.id, product.seller_id, userId, product.title]
+        [product.id, product.seller_id, userId, product.title, product.price_krw]
       );
 
       await client.query(
@@ -334,6 +340,7 @@ export async function playGamePurchase(
         SELECT
           id,
           title,
+          price_krw,
           seller_id,
           status,
           purchase_type,
@@ -434,6 +441,7 @@ export async function playGamePurchase(
             inserted.id,
             inserted.product_id,
             $5::text AS product_title,
+            $6::integer AS product_price_krw,
             inserted.seller_id,
             ${safeUserLoginIdSql("inserted.seller_id")} AS seller_threads_username,
             inserted.buyer_id,
@@ -443,7 +451,7 @@ export async function playGamePurchase(
             inserted.ordered_at
           FROM inserted
         `,
-        [product.id, product.seller_id, userId, attemptResult.rows[0].id, product.title]
+        [product.id, product.seller_id, userId, attemptResult.rows[0].id, product.title, product.price_krw]
       );
 
       await client.query(

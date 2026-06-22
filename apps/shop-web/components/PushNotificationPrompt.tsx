@@ -35,7 +35,9 @@ function isStandaloneMode() {
 
 function toUint8Array(base64String: string) {
   const padding = "=".repeat((4 - (base64String.length % 4)) % 4);
-  const normalized = (base64String + padding).replace(/-/g, "+").replace(/_/g, "/");
+  const normalized = (base64String + padding)
+    .replace(/-/g, "+")
+    .replace(/_/g, "/");
   const rawData = window.atob(normalized);
 
   return Uint8Array.from(rawData, (character) => character.charCodeAt(0));
@@ -129,7 +131,9 @@ export function PushNotificationPrompt({
     }
 
     if (isIosDevice() && !isStandaloneMode()) {
-      setMessage("아이폰과 아이패드는 홈 화면에 추가한 뒤 알림을 켤 수 있어요.");
+      setMessage(
+        "아이폰과 아이패드는 홈 화면에 추가한 뒤 알림을 켤 수 있어요.",
+      );
       return;
     }
 
@@ -149,7 +153,8 @@ export function PushNotificationPrompt({
       }
 
       const registration = await navigator.serviceWorker.ready;
-      const existingSubscription = await registration.pushManager.getSubscription();
+      const existingSubscription =
+        await registration.pushManager.getSubscription();
       const subscription =
         existingSubscription ??
         (await registration.pushManager.subscribe({
@@ -167,10 +172,13 @@ export function PushNotificationPrompt({
 
       setEnabled(true);
 
-      const result = await requestJson<{ message: string }>("/me/push-subscriptions/test", {
-        method: "POST",
-        body: JSON.stringify({ app }),
-      });
+      const result = await requestJson<{ message: string }>(
+        "/me/push-subscriptions/test",
+        {
+          method: "POST",
+          body: JSON.stringify({ app }),
+        },
+      );
 
       setMessage(result.message);
     } catch (error) {
@@ -210,10 +218,13 @@ export function PushNotificationPrompt({
     setMessage(null);
 
     try {
-      const result = await requestJson<{ message: string }>("/me/push-subscriptions/test", {
-        method: "POST",
-        body: JSON.stringify({ app }),
-      });
+      const result = await requestJson<{ message: string }>(
+        "/me/push-subscriptions/test",
+        {
+          method: "POST",
+          body: JSON.stringify({ app }),
+        },
+      );
       setMessage(result.message);
     } catch (error) {
       setMessage(getErrorMessage(error, "테스트 알림을 보내지 못했습니다."));
@@ -233,18 +244,11 @@ export function PushNotificationPrompt({
         >
           {busy ? "처리 중..." : enabled ? "알림 끄기" : "알림 켜기"}
         </Button>
-        {enabled ? (
-          <button
-            className="inline-flex min-h-10 items-center justify-center rounded-xl px-3 text-sm font-semibold text-[var(--buyer-muted)] transition hover:bg-[var(--buyer-soft)] hover:text-[var(--buyer-dark)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--buyer-accent)] focus-visible:ring-offset-2"
-            type="button"
-            onClick={() => void handleTest()}
-          >
-            테스트
-          </button>
-        ) : null}
       </div>
       {message ? (
-        <p className="px-2 text-xs leading-5 text-[var(--buyer-muted)]">{message}</p>
+        <p className="px-2 text-xs leading-5 text-[var(--buyer-muted)]">
+          {message}
+        </p>
       ) : null}
     </div>
   );

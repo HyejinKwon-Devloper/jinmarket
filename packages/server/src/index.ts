@@ -79,6 +79,10 @@ import {
   purchaseInstantProduct,
 } from "./services/purchase-service.js";
 import {
+  getLuckyRpsStatus,
+  playLuckyRpsRound,
+} from "./services/mini-game-service.js";
+import {
   getPublicWebPushKey,
   isWebPushConfigured,
   listPushAudienceSummaries,
@@ -1114,6 +1118,23 @@ export function createApp() {
     "/me",
     asyncHandler(async (request, response) => {
       response.json({ user: request.sessionUser ?? null });
+    }),
+  );
+
+  app.get(
+    "/me/minigames/lucky-rps",
+    asyncHandler(async (request, response) => {
+      const user = requireAuth(request);
+      response.json(await getLuckyRpsStatus(user.id));
+    }),
+  );
+
+  app.post(
+    "/me/minigames/lucky-rps/play",
+    asyncHandler(async (request, response) => {
+      const user = requireAuth(request);
+      const parsed = gamePlaySchema.parse(request.body);
+      response.json(await playLuckyRpsRound(user.id, parsed.playerChoice));
     }),
   );
 

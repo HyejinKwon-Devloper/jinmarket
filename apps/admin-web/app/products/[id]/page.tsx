@@ -332,6 +332,7 @@ export default function AdminProductDetailPage() {
                 item.soldOrder.buyerDisplayName,
                 item.soldOrder.buyerThreadsUsername,
               )}{" "}
+              / 등록가 {formatPrice(item.soldOrder.productPriceKrw)}{" "}
               /{" "}
               {item.soldOrder.source === "PRICE_OFFER_ACCEPTED"
                 ? "가격 제안 수락"

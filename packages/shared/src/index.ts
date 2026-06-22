@@ -18,9 +18,17 @@ export type GameChoice = (typeof gameChoices)[number];
 export const gameResults = ["WIN", "LOSE", "DRAW"] as const;
 export type GameResult = (typeof gameResults)[number];
 
+export const luckyRpsSessionStatuses = [
+  "IN_PROGRESS",
+  "WON",
+  "LOST",
+] as const;
+export type LuckyRpsSessionStatus = (typeof luckyRpsSessionStatuses)[number];
+
 export const GAME_PURCHASE_REQUIRED_WINS = 2;
 export const GAME_PURCHASE_MAX_DECISIVE_ROUNDS =
   GAME_PURCHASE_REQUIRED_WINS * 2 - 1;
+export const LUCKY_RPS_TARGET_WINS = 3;
 
 export const orderStatuses = [
   "PENDING_CONTACT",
@@ -209,10 +217,48 @@ export interface GamePurchaseProgress {
   canContinue: boolean;
 }
 
+export interface LuckyRpsRoundRecord {
+  id: string;
+  roundNumber: number;
+  playerChoice: GameChoice;
+  systemChoice: GameChoice;
+  result: GameResult;
+  playedAt: string;
+}
+
+export interface LuckyFortuneReward {
+  code: string;
+  title: string;
+  message: string;
+  isGifticon: boolean;
+}
+
+export interface LuckyRpsSessionRecord {
+  id: string;
+  status: LuckyRpsSessionStatus;
+  wins: number;
+  roundsPlayed: number;
+  targetWins: number;
+  completedAt: string | null;
+  rounds: LuckyRpsRoundRecord[];
+  reward: LuckyFortuneReward | null;
+}
+
+export interface LuckyRpsStatusResponse {
+  session: LuckyRpsSessionRecord | null;
+}
+
+export interface LuckyRpsPlayResult {
+  session: LuckyRpsSessionRecord;
+  latestRound: LuckyRpsRoundRecord;
+  message: string;
+}
+
 export interface OrderRecord {
   id: string;
   productId: string;
   productTitle: string;
+  productPriceKrw: number;
   sellerId: string;
   sellerDisplayName?: string;
   sellerThreadsUsername?: string | null;

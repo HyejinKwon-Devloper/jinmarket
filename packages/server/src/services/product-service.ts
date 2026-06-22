@@ -154,6 +154,7 @@ type OrderRow = {
   id: string;
   product_id: string;
   product_title: string;
+  product_price_krw: number;
   seller_id: string;
   seller_display_name: string | null;
   seller_threads_username: string | null;
@@ -221,6 +222,7 @@ function mapOrder(row: OrderRow) {
     id: row.id,
     productId: row.product_id,
     productTitle: row.product_title,
+    productPriceKrw: row.product_price_krw,
     sellerId: row.seller_id,
     sellerDisplayName: row.seller_display_name ?? undefined,
     sellerThreadsUsername: row.seller_threads_username ?? undefined,
@@ -762,6 +764,7 @@ export async function getProductDetail(
         o.id,
         o.product_id,
         p.title AS product_title,
+        p.price_krw AS product_price_krw,
         o.seller_id,
         CASE WHEN p.is_anonymous THEN NULL ELSE ${safeUserLoginIdSql("o.seller_id")} END AS seller_threads_username,
         o.buyer_id,
@@ -1381,6 +1384,7 @@ export async function acceptPriceOffer(
       const productResult = await client.query<{
         id: string;
         title: string;
+        price_krw: number;
         seller_id: string;
         status: "DRAFT" | "OPEN" | "SOLD_OUT" | "CANCELLED";
         published_at: Date | null;
@@ -1388,7 +1392,7 @@ export async function acceptPriceOffer(
         sale_ends_at: Date | null;
       }>(
         `
-        SELECT id, title, seller_id, status, published_at, created_at, sale_ends_at
+        SELECT id, title, price_krw, seller_id, status, published_at, created_at, sale_ends_at
         FROM products
         WHERE id = $1
         FOR UPDATE
@@ -1474,6 +1478,7 @@ export async function acceptPriceOffer(
             inserted.id,
             inserted.product_id,
             $5::text AS product_title,
+            $6::integer AS product_price_krw,
             inserted.seller_id,
             ${safeUserLoginIdSql("inserted.seller_id")} AS seller_threads_username,
             inserted.buyer_id,
@@ -1490,6 +1495,7 @@ export async function acceptPriceOffer(
             offer.buyer_id,
             offer.note ?? null,
             product.title,
+            product.price_krw,
           ],
         );
 
@@ -1563,6 +1569,7 @@ export async function listSellerOrders(sellerId: string) {
         o.id,
         o.product_id,
         p.title AS product_title,
+        p.price_krw AS product_price_krw,
         o.seller_id,
         CASE WHEN p.is_anonymous THEN NULL ELSE ${safeUserLoginIdSql("o.seller_id")} END AS seller_threads_username,
         o.buyer_id,
@@ -1589,6 +1596,7 @@ export async function listMyOrders(userId: string) {
         o.id,
         o.product_id,
         p.title AS product_title,
+        p.price_krw AS product_price_krw,
         o.seller_id,
         CASE WHEN p.is_anonymous THEN NULL ELSE ${safeUserLoginIdSql("o.seller_id")} END AS seller_threads_username,
         o.buyer_id,

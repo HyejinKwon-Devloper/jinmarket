@@ -81,6 +81,9 @@ function getFallbackInstallMode(platformInfo: PlatformInfo): InstallMode {
 }
 
 function getButtonLabel(mode: InstallMode, hasPrompt: boolean) {
+  void mode;
+  void hasPrompt;
+  return "앱설치";
   if (hasPrompt) {
     return "앱 설치";
   }

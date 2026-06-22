@@ -135,9 +135,10 @@ const envSchema = z.object({
     .transform((value) => parseBoolean(value, false))
     .default(false),
   SMTP_USER: z.string().default(""),
-  SMTP_PASS: z.string().default(""),
+  SMTP_PASS: z.string().default(process.env.SMTP_PASSWORD ?? ""),
   SMTP_FROM_EMAIL: z.string().default(""),
   SMTP_FROM_NAME: z.string().default("Jinmarket"),
+  MINI_GAME_GIFTICON_ALERT_LOGIN_ID: z.string().default("_nav.jin"),
   ALLOWED_ORIGINS: z.string().default(defaultAllowedOrigins),
   CLOUDINARY_CLOUD_NAME: z.string().default(""),
   CLOUDINARY_API_KEY: z.string().default(""),

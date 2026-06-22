@@ -1,5 +1,5 @@
-const STATIC_CACHE = "jinmarket-static-v1";
-const ASSET_CACHE = "jinmarket-assets-v1";
+const STATIC_CACHE = "jinmarket-static-v2";
+const ASSET_CACHE = "jinmarket-assets-v2";
 const OFFLINE_URL = "/offline";
 
 self.addEventListener("install", (event) => {
@@ -13,6 +13,7 @@ self.addEventListener("install", (event) => {
           "/icon-192.png",
           "/icon-512.png",
           "/icon-maskable-512.png",
+          "/notification-badge.png",
           "/apple-touch-icon.png",
         ]),
       )
@@ -64,7 +65,7 @@ self.addEventListener("push", (event) => {
   const options = {
     body: payload.body || "",
     icon: payload.icon || "/icon-192.png",
-    badge: payload.badge || "/icon-192.png",
+    badge: payload.badge || "/notification-badge.png",
     tag: payload.tag,
     requireInteraction: Boolean(payload.requireInteraction),
     data: {

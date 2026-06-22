@@ -72,7 +72,7 @@ const navItems: NavItem[] = [
   {
     href: "/game",
     label: "미니게임",
-    description: "타이밍 스톱 챌린지로 잠깐 쉬어가요.",
+    description: "타이밍 스톱과 행운 가위바위보를 골라 즐겨요.",
     isActive: (pathname) => pathname === "/game" || pathname.startsWith("/game/"),
   },
 ];

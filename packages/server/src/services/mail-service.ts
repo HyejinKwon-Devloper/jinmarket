@@ -240,6 +240,7 @@ export async function sendSellerOrderNotification(input: {
   buyerDisplayName: string;
   buyerLoginId?: string | null;
   productTitle: string;
+  productPriceKrw: number;
   orderTypeLabel: string;
   orderedAt: string;
   isFreeShare: boolean;
@@ -269,6 +270,13 @@ export async function sendSellerOrderNotification(input: {
       {
         label: "상품명",
         value: input.productTitle
+      },
+      {
+        label: "등록 금액",
+        value:
+          input.productPriceKrw <= 0
+            ? "무료 나눔"
+            : `${input.productPriceKrw.toLocaleString("ko-KR")}원`,
       },
       {
         label: "요청 유형",
@@ -305,5 +313,77 @@ export async function sendSellerOrderNotification(input: {
       html: template.html
     },
     `[seller-order-notification] skipped sellerEmail=${maskEmailAddress(input.sellerEmail)} productTitle=${input.productTitle} buyer=${buyerLabel} reason=smtp-not-configured`
+  );
+}
+
+export async function sendMiniGameGifticonWinnerAlert(input: {
+  email: string | null;
+  alertLoginId?: string | null;
+  winnerDisplayName: string;
+  winnerLoginId?: string | null;
+  rewardTitle: string;
+  rewardMessage: string;
+  completedAt: string;
+  sessionId: string;
+}) {
+  if (!input.email) {
+    return { delivered: false as const };
+  }
+
+  const winnerLabel =
+    input.winnerLoginId && input.winnerLoginId !== input.winnerDisplayName
+      ? `${input.winnerLoginId} (${input.winnerDisplayName})`
+      : input.winnerLoginId ?? input.winnerDisplayName;
+
+  const template = buildTransactionalMailTemplate({
+    preheader: "미니게임 기프티콘 당첨자가 발생했습니다.",
+    eyebrow: "Mini Game Alert",
+    title: "기프티콘 당첨자가 나왔어요",
+    intro: `${winnerLabel}님이 행운의 가위바위보 3연승에 성공해 기프티콘 보상에 당첨됐습니다.`,
+    paragraphs: [
+      "저장된 당첨 결과를 확인하고 실제 기프티콘 지급 절차를 이어서 진행해 주세요.",
+    ],
+    details: [
+      {
+        label: "당첨자",
+        value: winnerLabel,
+      },
+      {
+        label: "보상",
+        value: input.rewardTitle,
+      },
+      {
+        label: "행운 문구",
+        value: input.rewardMessage,
+      },
+      {
+        label: "당첨 시각",
+        value: new Date(input.completedAt).toLocaleString("ko-KR"),
+      },
+      {
+        label: "세션 ID",
+        value: input.sessionId,
+      },
+      ...(input.alertLoginId
+        ? [
+            {
+              label: "알림 계정",
+              value: input.alertLoginId,
+            },
+          ]
+        : []),
+    ],
+    footer: "이 알림은 지정된 단일 관리자 계정에만 발송됩니다.",
+    accentColor: "#d97706",
+  });
+
+  return sendMail(
+    {
+      to: input.email,
+      subject: `[Jinmarket] 미니게임 기프티콘 당첨 알림 - ${winnerLabel}`,
+      text: template.text,
+      html: template.html,
+    },
+    `[mini-game-gifticon-alert] skipped email=${maskEmailAddress(input.email)} winner=${winnerLabel} sessionId=${input.sessionId} reason=smtp-not-configured`,
   );
 }
