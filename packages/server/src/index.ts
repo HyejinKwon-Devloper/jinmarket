@@ -1240,7 +1240,9 @@ export function createApp() {
     "/me/profile",
     asyncHandler(async (request, response) => {
       const user = requireAuth(request);
-      const payload = profileUpdateSchema.parse(request.body);
+      const payload = profileUpdateSchema.parse(
+        request.body,
+      ) as Parameters<typeof updateProfile>[1];
       const updatedUser = await updateProfile(user.id, payload);
       response.json({
         user: updatedUser,
