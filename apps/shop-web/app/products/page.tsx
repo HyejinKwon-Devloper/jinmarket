@@ -1,15 +1,10 @@
 export const dynamic = "force-dynamic";
 
 import { ProductCatalogPageClient } from "../../components/ProductCatalogPageClient";
-import { readCurrentUser, readProducts } from "../../lib/server-api";
+import { readProducts } from "../../lib/server-api";
 
 export default async function ProductCatalogPage() {
-  const [initialUser, initialItems] = await Promise.all([
-    readCurrentUser(),
-    readProducts(),
-  ]);
+  const initialItems = await readProducts();
 
-  return (
-    <ProductCatalogPageClient initialItems={initialItems} initialUser={initialUser} />
-  );
+  return <ProductCatalogPageClient initialItems={initialItems} />;
 }

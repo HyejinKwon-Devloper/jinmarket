@@ -1,6 +1,6 @@
 import webpush from "web-push";
 
-import { query } from "@jinmarket/db";
+import { query, runWithSystemDbContext } from "@jinmarket/db";
 import type {
   PushApp,
   PushAudienceRole,
@@ -186,38 +186,45 @@ export async function saveWebPushSubscription(input: {
   subscription: WebPushSubscriptionPayload;
   userAgent?: string | null;
 }) {
-  await query(
-    `
-      INSERT INTO web_push_subscriptions (
-        user_id,
-        app,
-        endpoint,
-        p256dh_key,
-        auth_key,
-        expiration_time,
-        user_agent
-      )
-      VALUES ($1, $2, $3, $4, $5, $6, $7)
-      ON CONFLICT (endpoint)
-      DO UPDATE
-      SET user_id = EXCLUDED.user_id,
-          app = EXCLUDED.app,
-          p256dh_key = EXCLUDED.p256dh_key,
-          auth_key = EXCLUDED.auth_key,
-          expiration_time = EXCLUDED.expiration_time,
-          user_agent = EXCLUDED.user_agent,
-          updated_at = NOW(),
-          last_seen_at = NOW()
-    `,
-    [
-      input.userId,
-      input.app,
-      input.subscription.endpoint,
-      input.subscription.keys.p256dh,
-      input.subscription.keys.auth,
-      input.subscription.expirationTime ?? null,
-      input.userAgent ?? null
-    ]
+  // endpoint는 브라우저(서비스워커) 단위로 발급되어 로그인 계정과 무관하게 유지된다.
+  // 같은 기기에서 계정이 바뀌면 동일 endpoint가 이전 소유자 행과 충돌하는데,
+  // 이때 소유권을 새 유저로 이전하는 것이 올바른 동작이다. RLS UPDATE 정책의 USING은
+  // 기존(이전 소유자) 행을 검사하므로 일반 유저 컨텍스트로는 이 이전이 막힌다.
+  // 기기 단위 소유권 재할당이므로 이 한 작업만 시스템 컨텍스트에서 수행한다.
+  await runWithSystemDbContext(() =>
+    query(
+      `
+        INSERT INTO web_push_subscriptions (
+          user_id,
+          app,
+          endpoint,
+          p256dh_key,
+          auth_key,
+          expiration_time,
+          user_agent
+        )
+        VALUES ($1, $2, $3, $4, $5, $6, $7)
+        ON CONFLICT (endpoint)
+        DO UPDATE
+        SET user_id = EXCLUDED.user_id,
+            app = EXCLUDED.app,
+            p256dh_key = EXCLUDED.p256dh_key,
+            auth_key = EXCLUDED.auth_key,
+            expiration_time = EXCLUDED.expiration_time,
+            user_agent = EXCLUDED.user_agent,
+            updated_at = NOW(),
+            last_seen_at = NOW()
+      `,
+      [
+        input.userId,
+        input.app,
+        input.subscription.endpoint,
+        input.subscription.keys.p256dh,
+        input.subscription.keys.auth,
+        input.subscription.expirationTime ?? null,
+        input.userAgent ?? null
+      ]
+    )
   );
 }
 

@@ -50,10 +50,22 @@ export async function fetchCurrentUser() {
     cache: "no-store",
   });
 
-  const payload = (await response.json().catch(() => ({ user: null }))) as {
-    user: SessionUser | null;
+  const payload = (await response.json().catch(() => ({}))) as {
+    message?: string;
+    user?: SessionUser | null;
   };
-  return payload.user;
+
+  if (!response.ok) {
+    throw new ApiError(
+      payload.message ?? "로그인 상태를 확인하지 못했습니다.",
+    );
+  }
+
+  if (!("user" in payload)) {
+    throw new ApiError("로그인 상태를 확인하지 못했습니다.");
+  }
+
+  return payload.user ?? null;
 }
 
 export function notifyBuyerProfileUpdated(user: SessionUser) {
@@ -141,6 +153,32 @@ export async function updateProfileImage(profileImageUrl: string | null) {
     {
       method: "PATCH",
       body: JSON.stringify({ profileImageUrl }),
+    },
+  );
+}
+
+export async function updateProfile(input: {
+  displayName: string;
+  profileImageUrl: string | null;
+}) {
+  return requestJson<{ message: string; user: SessionUser }>(
+    "/me/profile",
+    {
+      method: "PATCH",
+      body: JSON.stringify(input),
+    },
+  );
+}
+
+export async function updatePassword(input: {
+  currentPassword?: string;
+  newPassword: string;
+}) {
+  return requestJson<{ message: string; user: SessionUser }>(
+    "/auth/password/setup",
+    {
+      method: "POST",
+      body: JSON.stringify(input),
     },
   );
 }

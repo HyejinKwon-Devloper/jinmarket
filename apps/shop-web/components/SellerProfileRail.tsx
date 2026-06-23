@@ -1,11 +1,8 @@
 "use client";
 
-import {
-  getSellerProfileInitial,
-  getSellerProfilePalette,
-  type SellerCatalogSection,
-} from "../lib/catalog";
+import { type SellerCatalogSection } from "../lib/catalog";
 import { cn } from "../lib/ui";
+import { ProfileAvatar } from "./ProfileAvatar";
 
 export function SellerProfileRail({
   sections,
@@ -62,14 +59,11 @@ export function SellerProfileRail({
                   type="button"
                   onClick={() => onSelectSeller(section.key)}
                 >
-                  <span
-                    aria-hidden="true"
-                    className={`flex h-12 w-12 items-center justify-center rounded-full border border-[var(--buyer-border)] bg-gradient-to-br ${getSellerProfilePalette(section.label)} text-[15px] font-black tracking-[-0.04em] text-[var(--buyer-dark)]`}
-                  >
-                    <span className="flex h-[82%] w-[82%] items-center justify-center rounded-full bg-white/90">
-                      {getSellerProfileInitial(section)}
-                    </span>
-                  </span>
+                  <ProfileAvatar
+                    displayName={section.label}
+                    imageUrl={section.profileImageUrl}
+                    size="xs"
+                  />
                   <span className="line-clamp-2 text-[11px] font-semibold leading-4 text-[var(--buyer-ink)]">
                     {section.label}
                   </span>

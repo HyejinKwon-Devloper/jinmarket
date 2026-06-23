@@ -4,7 +4,7 @@ import Link from "next/link";
 import type { OrderRecord } from "@jinmarket/shared";
 
 import { formatPrice } from "../../../lib/api";
-import { readCurrentUser, readMyOrders } from "../../../lib/server-api";
+import { readMyOrders, ServerApiError } from "../../../lib/server-api";
 
 function orderSourceLabel(source: OrderRecord["source"]) {
   switch (source) {
@@ -35,9 +35,15 @@ function orderStatusLabel(status: OrderRecord["status"]) {
 }
 
 export default async function MyOrdersPage() {
-  const user = await readCurrentUser();
+  let items: OrderRecord[];
 
-  if (!user) {
+  try {
+    items = await readMyOrders();
+  } catch (error) {
+    if (!(error instanceof ServerApiError && error.statusCode === 401)) {
+      throw error;
+    }
+
     return (
       <section className="panel">
         <p className="eyebrow">My Orders</p>
@@ -48,9 +54,6 @@ export default async function MyOrdersPage() {
       </section>
     );
   }
-
-  const items = await readMyOrders();
-
   return (
     <section className="panel">
       <p className="eyebrow">My Orders</p>

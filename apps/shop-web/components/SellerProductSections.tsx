@@ -2,11 +2,8 @@
 
 import type { ProductCard } from "@jinmarket/shared";
 
-import {
-  getSellerProfileInitial,
-  getSellerProfilePalette,
-  type SellerCatalogSection,
-} from "../lib/catalog";
+import { type SellerCatalogSection } from "../lib/catalog";
+import { ProfileAvatar } from "./ProfileAvatar";
 import { Badge } from "./ui/Badge";
 import { BuyerProductCard } from "./BuyerProductCard";
 
@@ -55,14 +52,12 @@ export function SellerProductSections({
           >
             <div className="flex flex-col gap-3 border-b border-[var(--buyer-border)] pb-3 sm:gap-4 sm:pb-4">
               <div className="flex items-center gap-3 sm:gap-4">
-                <div
-                  aria-hidden="true"
-                  className={`flex h-15 w-15 shrink-0 items-center justify-center rounded-full border border-[var(--buyer-border)] bg-gradient-to-br ${getSellerProfilePalette(section.label)} shadow-[0_10px_22px_rgba(31,78,121,0.10)] sm:h-18 sm:w-18`}
-                >
-                  <div className="flex h-[84%] w-[84%] items-center justify-center rounded-full bg-white/88 text-lg font-black tracking-[-0.04em] text-[var(--buyer-dark)] sm:text-[22px]">
-                    {getSellerProfileInitial(section)}
-                  </div>
-                </div>
+                <ProfileAvatar
+                  className="shrink-0 shadow-[0_10px_22px_rgba(31,78,121,0.10)]"
+                  displayName={section.label}
+                  imageUrl={section.profileImageUrl}
+                  size="md"
+                />
 
                 <div className="min-w-0 flex-1 space-y-1">
                   <div className="flex flex-wrap items-center gap-2">

@@ -2,17 +2,15 @@ export const dynamic = "force-dynamic";
 
 import Link from "next/link";
 
+import { BuyerLoginHint } from "../../components/BuyerLoginHint";
 import { SellerProductSections } from "../../components/SellerProductSections";
 import { Badge } from "../../components/ui/Badge";
 import { LinkButton } from "../../components/ui/Button";
 import { groupProductsByCatalogSection } from "../../lib/catalog";
-import { readCurrentUser, readProducts } from "../../lib/server-api";
+import { readProducts } from "../../lib/server-api";
 
 export default async function FreeSharePage() {
-  const [currentUser, products] = await Promise.all([
-    readCurrentUser(),
-    readProducts(),
-  ]);
+  const products = await readProducts();
   const items = products.filter((item) => item.isFreeShare);
   const sections = groupProductsByCatalogSection(items);
   const instantBuyCount = items.filter(
@@ -44,7 +42,7 @@ export default async function FreeSharePage() {
               </LinkButton>
             </div>
 
-            {!currentUser ? (
+            {false ? (
               <div className="rounded-2xl border border-[var(--buyer-border)] bg-[var(--buyer-softest)] px-3 py-2.5 text-[12px] leading-5 text-[var(--buyer-dark)] sm:px-4 sm:py-3 sm:text-sm sm:leading-6">
                 로그인 없이도 목록은 볼 수 있지만, 무료 나눔 요청이나 구매
                 진행은 로그인 후에 가능합니다.{" "}
@@ -57,6 +55,7 @@ export default async function FreeSharePage() {
                 후 계속해 주세요.
               </div>
             ) : null}
+            <BuyerLoginHint />
           </div>
 
           <aside className="grid gap-2 rounded-[22px] bg-[var(--buyer-softest)] p-3 sm:grid-cols-2 sm:gap-3 sm:rounded-[28px] sm:p-4 lg:grid-cols-1">

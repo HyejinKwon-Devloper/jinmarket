@@ -1,4 +1,5 @@
 import { query, runWithSystemDbContext, type DbClient } from "@jinmarket/db";
+import { sanitizeProfileImageUrl } from "@jinmarket/shared";
 
 import { decryptDisplayName, decryptOptionalEmail } from "../utils/pii.js";
 
@@ -13,6 +14,7 @@ type UserIdentityRow = {
   email_iv: string | null;
   email_auth_tag: string | null;
   login_id: string | null;
+  profile_image_url: string | null;
 };
 
 export type UserIdentityRecord = {
@@ -20,6 +22,7 @@ export type UserIdentityRecord = {
   displayName: string;
   email: string | null;
   loginId: string | null;
+  profileImageUrl: string | null;
 };
 
 function mapUserIdentity(row: UserIdentityRow): UserIdentityRecord {
@@ -28,6 +31,7 @@ function mapUserIdentity(row: UserIdentityRow): UserIdentityRecord {
     displayName: decryptDisplayName(row),
     email: decryptOptionalEmail(row),
     loginId: row.login_id,
+    profileImageUrl: sanitizeProfileImageUrl(row.profile_image_url),
   };
 }
 
@@ -50,11 +54,12 @@ export async function loadUserIdentityMap(
       u.email_encrypted,
       u.email_iv,
       u.email_auth_tag,
+      u.profile_image_url,
       ${accountLoginIdSql("account")} AS login_id
     FROM users u
     ${accountIdentityJoins("account", "u")}
     WHERE u.id = ANY($1::uuid[])
-    GROUP BY u.id, ${accountLoginIdSql("account")}
+    GROUP BY u.id, u.profile_image_url, ${accountLoginIdSql("account")}
   `;
 
   // These lookups hydrate already-authorized responses after product/event/order row filtering,

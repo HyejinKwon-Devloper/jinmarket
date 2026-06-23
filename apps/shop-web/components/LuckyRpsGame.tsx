@@ -15,6 +15,7 @@ import {
 
 import { ApiError, requestJson } from "../lib/api";
 import { cn } from "../lib/ui";
+import { useBuyerSession } from "./BuyerSessionProvider";
 import { Badge } from "./ui/Badge";
 import { LinkButton } from "./ui/Button";
 
@@ -130,24 +131,34 @@ export function LuckyRpsGame({
 }: {
   initialUser: SessionUser | null;
 }) {
+  const { hasError, isResolved, refreshUser, user } = useBuyerSession();
+  const effectiveUser =
+    isResolved && !hasError ? user : user ?? initialUser ?? null;
+  const hasSessionError = hasError && !effectiveUser;
+  const isSessionLoading = !effectiveUser && !isResolved && !hasError;
   const [session, setSession] = useState<LuckyRpsSessionRecord | null>(null);
   const [selectedChoice, setSelectedChoice] = useState<GameChoice | null>(null);
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [isLoading, setIsLoading] = useState(Boolean(initialUser));
+  const [isLoading, setIsLoading] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   const theme = useMemo(
     () =>
       announcerThemes[
-        hashSeed(initialUser?.id ?? initialUser?.displayName ?? "guest") %
+        hashSeed(effectiveUser?.id ?? effectiveUser?.displayName ?? "guest") %
           announcerThemes.length
       ],
-    [initialUser?.displayName, initialUser?.id],
+    [effectiveUser?.displayName, effectiveUser?.id],
   );
 
   useEffect(() => {
-    if (!initialUser) {
+    if (isSessionLoading) {
+      setIsLoading(false);
+      return;
+    }
+
+    if (!effectiveUser) {
       setSession(null);
       setStatusMessage(null);
       setError(null);
@@ -188,7 +199,7 @@ export function LuckyRpsGame({
     return () => {
       cancelled = true;
     };
-  }, [initialUser]);
+  }, [effectiveUser, isSessionLoading]);
 
   const latestRound = getLatestRound(session);
   const canPlay = !session || session.status === "IN_PROGRESS";
@@ -250,12 +261,33 @@ export function LuckyRpsGame({
           </div>
           <div className="rpsSpeechBubble">
             <strong>{theme.name}</strong>
-            <p>{`${theme.intro} ${getHeroMessage(session, initialUser)}`}</p>
+            <p>{`${theme.intro} ${getHeroMessage(session, effectiveUser)}`}</p>
           </div>
         </div>
       </section>
 
-      {!initialUser ? (
+      {hasSessionError ? (
+        <section className="rounded-[26px] border border-[var(--buyer-border)] bg-white p-5 shadow-[0_18px_42px_rgba(15,23,42,0.06)] sm:rounded-[32px] sm:p-6">
+          <div className="space-y-3">
+            <Badge variant="warning">상태 확인 필요</Badge>
+            <h2 className="text-xl font-extrabold tracking-[-0.03em] text-[var(--buyer-dark)] sm:text-2xl">
+              로그인 상태를 확인하지 못했어요
+            </h2>
+            <p className="text-sm leading-6 text-[var(--buyer-muted)] sm:text-base">
+              잠시 후 다시 확인하면 이어서 게임에 참여할 수 있습니다.
+            </p>
+            <div className="actionRow pt-1">
+              <button
+                type="button"
+                className="primaryButton"
+                onClick={() => void refreshUser()}
+              >
+                로그인 상태 다시 확인
+              </button>
+            </div>
+          </div>
+        </section>
+      ) : isResolved && !effectiveUser ? (
         <section className="rounded-[26px] border border-[var(--buyer-border)] bg-white p-5 shadow-[0_18px_42px_rgba(15,23,42,0.06)] sm:rounded-[32px] sm:p-6">
           <div className="space-y-3">
             <Badge variant="warning">로그인 필요</Badge>
@@ -321,9 +353,13 @@ export function LuckyRpsGame({
               <Badge variant="warning">무승부도 도전 종료</Badge>
             </div>
 
-            {isLoading ? (
-              <div className="grid place-items-center py-8">
-                <div className="h-10 w-10 animate-spin rounded-full border-4 border-[var(--buyer-soft)] border-t-[var(--buyer-primary)]" />
+            {isLoading || isSessionLoading ? (
+              <div className="grid place-items-center py-8" role="status">
+                <span className="sr-only">행운의 가위바위보 상태를 불러오는 중입니다.</span>
+                <div
+                  aria-hidden="true"
+                  className="h-10 w-10 animate-spin rounded-full border-4 border-[var(--buyer-soft)] border-t-[var(--buyer-primary)] motion-reduce:animate-none"
+                />
               </div>
             ) : (
               <>
@@ -399,7 +435,7 @@ export function LuckyRpsGame({
         </section>
       )}
 
-      {initialUser ? (
+      {effectiveUser ? (
         <>
           <section className="rounded-[26px] border border-[var(--buyer-border)] bg-white p-5 shadow-[0_18px_42px_rgba(15,23,42,0.06)] sm:rounded-[32px] sm:p-6">
             <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">

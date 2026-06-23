@@ -1,7 +1,7 @@
 "use client";
 
 import { useDeferredValue, useEffect, useState } from "react";
-import type { ProductCard, SessionUser } from "@jinmarket/shared";
+import type { ProductCard } from "@jinmarket/shared";
 
 import { SellerProductSections } from "./SellerProductSections";
 import { SellerProfileRail } from "./SellerProfileRail";
@@ -18,7 +18,6 @@ export function HomeCatalogClient({
   initialItems,
 }: {
   initialItems: ProductCard[];
-  initialUser: SessionUser | null;
 }) {
   const [activeFilter, setActiveFilter] = useState<ProductFilter>("ALL");
   const [searchQuery, setSearchQuery] = useState("");

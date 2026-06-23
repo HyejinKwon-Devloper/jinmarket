@@ -4,6 +4,7 @@ export type SellerCatalogSection = {
   key: string;
   label: string;
   description: string;
+  profileImageUrl: string | null;
   items: ProductCard[];
 };
 
@@ -33,6 +34,9 @@ export function groupProductsByCatalogSection(items: ProductCard[]): SellerCatal
     const existing = sections.get(item.catalogGroupKey);
 
     if (existing) {
+      if (!existing.profileImageUrl && item.sellerProfileImageUrl) {
+        existing.profileImageUrl = item.sellerProfileImageUrl;
+      }
       existing.items.push(item);
       continue;
     }
@@ -43,6 +47,7 @@ export function groupProductsByCatalogSection(items: ProductCard[]): SellerCatal
       description: item.isAnonymous
         ? "판매자 정보를 공개하지 않는 상품만 따로 모아둔 섹션입니다."
         : "같은 판매자가 등록한 상품을 한 번에 둘러볼 수 있습니다.",
+      profileImageUrl: item.isAnonymous ? null : item.sellerProfileImageUrl,
       items: [item],
     });
   }

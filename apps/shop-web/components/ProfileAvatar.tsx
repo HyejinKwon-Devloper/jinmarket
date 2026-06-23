@@ -14,11 +14,13 @@ type ProfileAvatarProps = {
   className?: string;
   displayName: string;
   imageUrl?: string | null;
-  size?: "sm" | "lg" | "xl";
+  size?: "xs" | "sm" | "md" | "lg" | "xl";
 };
 
 const sizeClasses = {
+  xs: "h-12 w-12 text-[15px]",
   sm: "h-14 w-14 text-lg",
+  md: "h-18 w-18 text-[22px]",
   lg: "h-20 w-20 text-2xl",
   xl: "h-28 w-28 text-3xl",
 } as const;

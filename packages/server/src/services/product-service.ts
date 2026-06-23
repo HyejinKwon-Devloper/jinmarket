@@ -96,6 +96,7 @@ type ProductCardRow = {
   purchase_type: "INSTANT_BUY" | "GAME_CHANCE";
   status: "DRAFT" | "OPEN" | "SOLD_OUT" | "CANCELLED";
   seller_display_name: string | null;
+  seller_profile_image_url: string | null;
   primary_image_url: string | null;
   sale_started_at: Date;
   sale_ends_at: Date | null;
@@ -196,6 +197,7 @@ function mapProductCard(row: ProductCardRow): ProductCard {
       ? "익명 셀렉션"
       : (row.seller_display_name ?? "판매자 셀렉션"),
     sellerDisplayName: row.seller_display_name,
+    sellerProfileImageUrl: row.seller_profile_image_url,
     primaryImageUrl: row.primary_image_url,
     saleStartsAt: row.sale_started_at.toISOString(),
     saleEndsAt: row.sale_ends_at ? row.sale_ends_at.toISOString() : null,
@@ -275,6 +277,9 @@ async function hydrateProductCardRows(
     seller_display_name: row.is_anonymous
       ? null
       : (identities.get(row.seller_id)?.displayName ?? null),
+    seller_profile_image_url: row.is_anonymous
+      ? null
+      : (identities.get(row.seller_id)?.profileImageUrl ?? null),
     sold_buyer_display_name: row.sold_buyer_id
       ? (identities.get(row.sold_buyer_id)?.displayName ?? null)
       : null,

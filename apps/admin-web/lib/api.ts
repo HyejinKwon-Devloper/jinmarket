@@ -9,6 +9,7 @@ import type {
 } from "@jinmarket/shared";
 
 const defaultApiBaseUrl = "/api";
+const adminProfileUpdatedEventName = "jinmarket:admin-profile-updated";
 const csrfHeaderName = "x-jinmarket-csrf";
 const csrfHeaderValue = "1";
 
@@ -61,6 +62,38 @@ export async function fetchCurrentUser() {
   return payload.user;
 }
 
+export function notifyAdminProfileUpdated(user: SessionUser) {
+  if (typeof window === "undefined") {
+    return;
+  }
+
+  window.dispatchEvent(
+    new CustomEvent<{ user: SessionUser }>(adminProfileUpdatedEventName, {
+      detail: { user },
+    }),
+  );
+}
+
+export function subscribeAdminProfileUpdated(
+  onUpdate: (user: SessionUser) => void,
+) {
+  if (typeof window === "undefined") {
+    return () => undefined;
+  }
+
+  const handleUpdate = (event: Event) => {
+    const customEvent = event as CustomEvent<{ user: SessionUser }>;
+
+    if (customEvent.detail?.user) {
+      onUpdate(customEvent.detail.user);
+    }
+  };
+
+  window.addEventListener(adminProfileUpdatedEventName, handleUpdate);
+  return () =>
+    window.removeEventListener(adminProfileUpdatedEventName, handleUpdate);
+}
+
 export function isApprovalAdmin(user?: SessionUser | null) {
   return Boolean(user && user.roles.includes("ADMIN"));
 }
@@ -73,6 +106,79 @@ export function hasSellerAccess(user?: SessionUser | null) {
 
 export async function fetchSellerAccessOverview() {
   return requestJson<SellerAccessOverview>("/admin/seller-access/me");
+}
+
+type UploadedAsset = {
+  bytes: number;
+  height: number;
+  imageUrl: string;
+  providerPublicId: string;
+  width: number;
+};
+
+export async function uploadProfileImage(file: File): Promise<UploadedAsset> {
+  const signature = await requestJson<UploadSignatureResponse>(
+    "/me/profile-image/sign",
+    {
+      method: "POST",
+    },
+  );
+  const formData = new FormData();
+
+  formData.append("file", file);
+  formData.append("api_key", signature.apiKey);
+  formData.append("timestamp", String(signature.timestamp));
+  formData.append("signature", signature.signature);
+  formData.append("folder", signature.folder);
+
+  const response = await fetch(
+    `https://api.cloudinary.com/v1_1/${signature.cloudName}/image/upload`,
+    {
+      method: "POST",
+      body: formData,
+    },
+  );
+  const payload = await response.json();
+
+  if (!response.ok) {
+    throw new ApiError(
+      payload.error?.message ?? "프로필 사진 업로드에 실패했습니다.",
+    );
+  }
+
+  return {
+    bytes: payload.bytes as number,
+    height: payload.height as number,
+    imageUrl: payload.secure_url as string,
+    providerPublicId: payload.public_id as string,
+    width: payload.width as number,
+  };
+}
+
+export async function updateProfile(input: {
+  displayName: string;
+  profileImageUrl: string | null;
+}) {
+  return requestJson<{ message: string; user: SessionUser }>(
+    "/me/profile",
+    {
+      method: "PATCH",
+      body: JSON.stringify(input),
+    },
+  );
+}
+
+export async function updatePassword(input: {
+  currentPassword?: string;
+  newPassword: string;
+}) {
+  return requestJson<{ message: string; user: SessionUser }>(
+    "/auth/password/setup",
+    {
+      method: "POST",
+      body: JSON.stringify(input),
+    },
+  );
 }
 
 export async function uploadImages(files: File[]) {

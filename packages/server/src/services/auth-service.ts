@@ -64,6 +64,7 @@ type RequiredEncryptedEmailColumns = {
 type SessionUserRow = EncryptedDisplayNameColumns &
   EncryptedEmailColumns & {
   id: string;
+  has_local_password: boolean;
   profile_image_url: string | null;
   seller_email_verified_at: Date | null;
   login_id: string | null;
@@ -233,6 +234,7 @@ function mapSessionUser(row: SessionUserRow): SessionUser {
     id: row.id,
     displayName: decryptDisplayName(row),
     email: decryptOptionalEmail(row),
+    hasLocalPassword: row.has_local_password,
     profileImageUrl: sanitizeProfileImageUrl(row.profile_image_url),
     sellerEmailVerifiedAt: row.seller_email_verified_at ? row.seller_email_verified_at.toISOString() : null,
     threadsUsername: row.login_id,
@@ -367,8 +369,8 @@ function normalizeLoginId(rawLoginId: string) {
 function normalizeDisplayName(rawDisplayName: string) {
   const normalized = rawDisplayName.trim();
 
-  if (normalized.length < 2 || normalized.length > 60) {
-    throw new AppError("이름은 2자 이상 60자 이하로 입력해 주세요.", 400);
+  if (normalized.length < 1 || normalized.length > 60) {
+    throw new AppError("이름은 1자 이상 60자 이하로 입력해 주세요.", 400);
   }
 
   return normalized;
@@ -595,6 +597,7 @@ async function getUserBySessionHash(sessionHash: string) {
         u.email_encrypted,
         u.email_iv,
         u.email_auth_tag,
+        (session_user_local.user_id IS NOT NULL) AS has_local_password,
         u.profile_image_url,
         u.seller_email_verified_at,
         ${accountLoginIdSql("session_user")} AS login_id,
@@ -610,7 +613,7 @@ async function getUserBySessionHash(sessionHash: string) {
           session_user_local.user_id IS NULL
           OR us.created_at >= session_user_local.password_updated_at
         )
-      GROUP BY u.id, ${accountLoginIdSql("session_user")}
+      GROUP BY u.id, ${accountLoginIdSql("session_user")}, session_user_local.user_id
     `,
     [sessionHash]
   );
@@ -629,6 +632,7 @@ async function loadSessionUserById(client: DbClient, userId: string) {
         u.email_encrypted,
         u.email_iv,
         u.email_auth_tag,
+        (account_local.user_id IS NOT NULL) AS has_local_password,
         u.profile_image_url,
         u.seller_email_verified_at,
         ${accountLoginIdSql("account")} AS login_id,
@@ -637,7 +641,7 @@ async function loadSessionUserById(client: DbClient, userId: string) {
       ${accountIdentityJoins("account", "u")}
       LEFT JOIN user_roles ur ON ur.user_id = u.id
       WHERE u.id = $1
-      GROUP BY u.id, ${accountLoginIdSql("account")}
+      GROUP BY u.id, ${accountLoginIdSql("account")}, account_local.user_id
     `,
     [userId]
   );
@@ -2395,12 +2399,124 @@ export async function loginWithPassword(input: { loginId: string; password: stri
   }));
 }
 
+export async function changePassword(input: {
+  userId: string;
+  currentPassword?: string;
+  newPassword: string;
+}) {
+  assertPasswordLength(input.newPassword);
+
+  return runWithSystemDbContext(() => withTransaction(async (client) => {
+    const accountResult = await client.query<{
+      has_local_password: boolean;
+      login_id: string | null;
+      password_hash: string | null;
+    }>(
+      `
+        SELECT
+          ${accountLoginIdSql("account")} AS login_id,
+          (account_local.user_id IS NOT NULL) AS has_local_password,
+          account_local.password_hash
+        FROM users u
+        ${accountIdentityJoins("account", "u")}
+        WHERE u.id = $1
+        GROUP BY u.id, ${accountLoginIdSql("account")}, account_local.user_id, account_local.password_hash
+      `,
+      [input.userId]
+    );
+
+    const account = accountResult.rows[0];
+
+    if (!account) {
+      throw new AppError("사용자 정보를 찾을 수 없습니다.", 404);
+    }
+
+    if (!account.login_id) {
+      throw new AppError(
+        "비밀번호 로그인에 사용할 아이디를 찾을 수 없습니다.",
+        409,
+        "LOGIN_ID_NOT_AVAILABLE"
+      );
+    }
+
+    if (account.has_local_password) {
+      if (!input.currentPassword) {
+        throw new AppError("현재 비밀번호를 입력해 주세요.", 400);
+      }
+
+      const isValidPassword =
+        account.password_hash
+          ? await verifyPassword(input.currentPassword, account.password_hash)
+          : false;
+
+      if (!isValidPassword) {
+        throw new AppError(
+          "현재 비밀번호가 올바르지 않습니다.",
+          400,
+          "INVALID_CURRENT_PASSWORD"
+        );
+      }
+    }
+
+    const passwordHash = await hashPassword(input.newPassword);
+
+    await upsertLocalPassword(client, {
+      userId: input.userId,
+      loginId: account.login_id,
+      passwordHash
+    });
+    await revokeAllUserSessions(client, input.userId);
+
+    return createSessionForUserId(client, input.userId);
+  }));
+}
+
 export async function getSessionUser(sessionToken?: string) {
   if (!sessionToken) {
     return null;
   }
 
   return runWithSystemDbContext(() => getUserBySessionHash(hashSessionToken(sessionToken)));
+}
+
+export async function updateProfile(
+  userId: string,
+  input: {
+    displayName: string;
+    profileImageUrl: string | null;
+  }
+) {
+  const displayName = normalizeDisplayName(input.displayName);
+  const profileImageUrl = normalizeProfileImageUrl(input.profileImageUrl);
+  const encryptedDisplayName = buildEncryptedDisplayNamePayload(displayName);
+
+  return runWithSystemDbContext(() => withTransaction(async (client) => {
+    const result = await client.query<{ id: string }>(
+      `
+        UPDATE users
+        SET display_name_encrypted = $2,
+            display_name_iv = $3,
+            display_name_auth_tag = $4,
+            profile_image_url = $5,
+            updated_at = NOW()
+        WHERE id = $1
+        RETURNING id
+      `,
+      [
+        userId,
+        encryptedDisplayName.encrypted,
+        encryptedDisplayName.iv,
+        encryptedDisplayName.authTag,
+        profileImageUrl,
+      ]
+    );
+
+    if (!result.rows[0]) {
+      throw new AppError("사용자 정보를 찾을 수 없습니다.", 404);
+    }
+
+    return loadSessionUserById(client, userId);
+  }));
 }
 
 export async function updateProfileImage(userId: string, rawProfileImageUrl: string | null) {

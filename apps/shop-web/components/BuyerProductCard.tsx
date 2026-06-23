@@ -1,5 +1,6 @@
 "use client";
 
+import { useRouter } from "next/navigation";
 import type { ProductCard } from "@jinmarket/shared";
 
 import { formatPrice, purchaseTypeLabel, statusLabel } from "../lib/api";
@@ -15,7 +16,21 @@ export function BuyerProductCard({
   priority?: boolean;
   variant?: "compact" | "catalog";
 }) {
+  const router = useRouter();
   const image = getProductCardImageProps(item.primaryImageUrl);
+  const handleImageError = (
+    event: React.SyntheticEvent<HTMLImageElement>,
+  ) => {
+    const target = event.currentTarget;
+
+    // 깨진/만료된 이미지 URL이면 플레이스홀더로 대체한다. 이미 폴백이면 무한 루프를 막는다.
+    if (target.src === image.fallbackSrc) {
+      return;
+    }
+
+    target.srcset = "";
+    target.src = image.fallbackSrc;
+  };
   const sellerLabel = item.isAnonymous
     ? "익명 셀렉션"
     : `${item.sellerDisplayName ?? item.catalogGroupLabel}`;
@@ -25,7 +40,7 @@ export function BuyerProductCard({
       <article className="group flex h-full flex-col rounded-[24px] border border-[var(--buyer-border)] bg-white p-2.5 shadow-[0_14px_32px_rgba(15,23,42,0.06)] transition hover:-translate-y-0.5 hover:shadow-[0_20px_44px_rgba(31,78,121,0.12)] sm:rounded-[28px] sm:p-3">
         <div
           className="rounded-[20px] bg-[var(--buyer-softest)] p-2 sm:rounded-[24px] sm:p-2.5"
-          onClick={() => (window.location.href = `/products/${item.id}`)}
+          onClick={() => router.push(`/products/${item.id}`)}
         >
           <div className="relative overflow-hidden rounded-[18px] bg-[var(--buyer-soft)] sm:rounded-[22px]">
             <img
@@ -39,6 +54,7 @@ export function BuyerProductCard({
               src={image.src}
               srcSet={image.srcSet}
               width={720}
+              onError={handleImageError}
             />
             <div className="absolute left-2 top-2 flex flex-wrap gap-1 sm:left-3 sm:top-3 sm:gap-1.5">
               <Badge variant={item.status === "OPEN" ? "success" : "default"}>
@@ -91,7 +107,7 @@ export function BuyerProductCard({
     <article className="flex h-full flex-col overflow-hidden rounded-[18px] border border-[var(--buyer-border)] bg-white shadow-[0_12px_24px_rgba(15,23,42,0.06)] transition hover:-translate-y-0.5 hover:shadow-[0_20px_40px_rgba(31,78,121,0.12)] sm:rounded-[22px]">
       <div
         className="relative overflow-hidden bg-[var(--buyer-soft)]"
-        onClick={() => (window.location.href = `/products/${item.id}`)}
+        onClick={() => router.push(`/products/${item.id}`)}
       >
         <img
           alt={item.title}
@@ -104,6 +120,7 @@ export function BuyerProductCard({
           src={image.src}
           srcSet={image.srcSet}
           width={720}
+          onError={handleImageError}
         />
         <div className="absolute left-2.5 top-2.5 flex flex-wrap gap-1 sm:left-3 sm:top-3 sm:gap-1.5">
           <Badge variant={item.status === "OPEN" ? "success" : "default"}>

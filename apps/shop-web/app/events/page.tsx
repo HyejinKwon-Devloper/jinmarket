@@ -1,9 +1,7 @@
 export const dynamic = "force-dynamic";
 
-import Link from "next/link";
-
 import { EventCardGrid } from "../../components/EventCardGrid";
-import { readCurrentUser, readEvents } from "../../lib/server-api";
+import { readEvents } from "../../lib/server-api";
 
 function eventStateLabel(item: Awaited<ReturnType<typeof readEvents>>[number]) {
   const now = Date.now();
@@ -22,10 +20,7 @@ function eventStateLabel(item: Awaited<ReturnType<typeof readEvents>>[number]) {
 }
 
 export default async function EventZonePage() {
-  const [currentUser, items] = await Promise.all([
-    readCurrentUser(),
-    readEvents(),
-  ]);
+  const items = await readEvents();
   const activeCount = items.filter(
     (item) => eventStateLabel(item) === "진행중",
   ).length;

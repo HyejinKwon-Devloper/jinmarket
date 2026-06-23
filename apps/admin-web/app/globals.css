@@ -400,6 +400,30 @@ button:disabled {
     );
 }
 
+.adminProfileCardLink {
+  color: inherit;
+  text-decoration: none;
+  transition:
+    transform 160ms ease,
+    box-shadow 160ms ease,
+    border-color 160ms ease,
+    background-color 160ms ease;
+}
+
+.adminProfileCardLink:hover {
+  transform: translateY(-1px);
+  border-color: rgba(31, 78, 121, 0.2);
+  box-shadow: 0 14px 28px rgba(31, 78, 121, 0.1);
+}
+
+.adminProfileCardLink:focus-visible {
+  outline: none;
+  border-color: rgba(31, 78, 121, 0.28);
+  box-shadow:
+    0 0 0 3px rgba(95, 168, 211, 0.2),
+    0 14px 28px rgba(31, 78, 121, 0.1);
+}
+
 .adminAvatar {
   width: 64px;
   height: 64px;

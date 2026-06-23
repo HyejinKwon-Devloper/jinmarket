@@ -1,4 +1,15 @@
-import { createHmac, randomBytes } from "node:crypto";
+import { createHmac, randomBytes, timingSafeEqual } from "node:crypto";
+
+function constantTimeEquals(a: string, b: string) {
+  const bufferA = Buffer.from(a, "utf8");
+  const bufferB = Buffer.from(b, "utf8");
+
+  if (bufferA.length !== bufferB.length) {
+    return false;
+  }
+
+  return timingSafeEqual(bufferA, bufferB);
+}
 
 const base32Alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567";
 
@@ -123,7 +134,7 @@ export function verifyTotpToken(input: {
       continue;
     }
 
-    if (generateHotp(secret, step, digits) === input.token) {
+    if (constantTimeEquals(generateHotp(secret, step, digits), input.token)) {
       return {
         step,
         delta: offset

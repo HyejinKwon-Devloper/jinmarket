@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import type { PushApp, WebPushSubscriptionPayload } from "@jinmarket/shared";
 
 import { ApiError, requestJson } from "../lib/api";
+import { unsubscribeLocalPush } from "../lib/push";
 import { Button } from "./ui/Button";
 
 type PushConfigResponse = {
@@ -193,16 +194,7 @@ export function PushNotificationPrompt({
     setMessage(null);
 
     try {
-      const registration = await navigator.serviceWorker.ready;
-      const subscription = await registration.pushManager.getSubscription();
-
-      if (subscription) {
-        await requestJson("/me/push-subscriptions", {
-          method: "DELETE",
-          body: JSON.stringify({ endpoint: subscription.endpoint }),
-        });
-        await subscription.unsubscribe();
-      }
+      await unsubscribeLocalPush();
 
       setEnabled(false);
       setMessage("푸시 알림을 해제했습니다.");

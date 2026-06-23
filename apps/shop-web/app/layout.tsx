@@ -69,6 +69,10 @@ export default function RootLayout({
 }) {
   return (
     <html lang="ko">
+      <head>
+        <link href="https://res.cloudinary.com" rel="preconnect" crossOrigin="" />
+        <link href="https://res.cloudinary.com" rel="dns-prefetch" />
+      </head>
       <body>
         <AppShell>{children}</AppShell>
       </body>

@@ -14,6 +14,7 @@ import {
   pushAudienceRoles,
   type CreatePriceOfferInput,
   type CreateProductInput,
+  type UpdateEventInput,
   type UpdateProductInput,
   type WebPushSubscriptionPayload,
 } from "../../shared/src/index.js";
@@ -23,6 +24,7 @@ import { allowedOrigins, env, isSellerApprovalAdminLoginId } from "./env.js";
 import {
   clearSellerApprovalAuthCookie,
   clearSessionCookie,
+  changePassword,
   getSellerApprovalAdminAuthStatus,
   getSessionUser,
   loginWithPassword,
@@ -37,6 +39,7 @@ import {
   sellerApprovalAuthCookieName,
   setSessionCookie,
   setSellerApprovalAuthCookie,
+  updateProfile,
   updateProfileImage,
   verifyBuyerAccountActivation,
   verifyBuyerEmailVerification,
@@ -56,6 +59,7 @@ import {
   listEventEntries,
   listPublicEvents,
   listSellerEvents,
+  updateSellerEvent,
 } from "./services/event-service.js";
 import {
   acceptPriceOffer,
@@ -127,14 +131,14 @@ const loginSchema = z.object({
 
 const buyerSignupSchema = z.object({
   loginId: z.string().trim().min(2).max(120),
-  displayName: z.string().trim().min(2).max(60),
+  displayName: z.string().trim().min(1).max(60),
   email: z.string().trim().email().max(255),
   password: z.string().min(8).max(200),
 });
 
 const signupRequestSchema = z.object({
   loginId: z.string().trim().min(2).max(120),
-  displayName: z.string().trim().min(2).max(60),
+  displayName: z.string().trim().min(1).max(60),
   email: z.string().trim().email().max(255),
   password: z.string().min(8).max(200),
 });
@@ -161,6 +165,16 @@ const sellerEmailVerifySchema = z.object({
 
 const profileImageUpdateSchema = z.object({
   profileImageUrl: z.string().trim().url().max(2048).nullable(),
+});
+
+const profileUpdateSchema = z.object({
+  displayName: z.string().trim().min(1).max(60),
+  profileImageUrl: z.string().trim().url().max(2048).nullable(),
+});
+
+const passwordSetupSchema = z.object({
+  currentPassword: z.string().max(200).optional(),
+  newPassword: z.string().min(8).max(200),
 });
 
 const pushAppSchema = z.enum(pushApps);
@@ -966,11 +980,35 @@ export function createApp() {
 
   app.post(
     "/auth/password/setup",
-    asyncHandler(async () => {
-      throw new AppError(
-        "비밀번호 설정 변경 기능은 아직 제공되지 않습니다.",
-        410,
-      );
+    asyncHandler(async (request, response) => {
+      const user = requireAuth(request);
+      const parsed = passwordSetupSchema.parse(request.body) as Omit<
+        Parameters<typeof changePassword>[0],
+        "userId"
+      >;
+
+      assertRateLimit(response, {
+        scope: "password-setup-user",
+        key: `${getClientIp(request)}:${user.id}`,
+        max: 10,
+        windowMs: 10 * minuteMs,
+        message: "비밀번호 변경 시도가 너무 많습니다. 잠시 후 다시 시도해 주세요.",
+        code: "PASSWORD_SETUP_RATE_LIMITED",
+      });
+
+      const session = await changePassword({
+        userId: user.id,
+        ...parsed,
+      });
+
+      clearSellerApprovalAuthCookie(response);
+      setSessionCookie(response, session.sessionToken, session.expiresAt);
+      response.status(201).json({
+        user: session.user,
+        message: user.hasLocalPassword
+          ? "비밀번호가 변경되었습니다."
+          : "비밀번호가 설정되었습니다.",
+      });
     }),
   );
 
@@ -1195,6 +1233,19 @@ export function createApp() {
     asyncHandler(async (request, response) => {
       const user = requireAuth(request);
       response.json(signProfileImageUpload(user));
+    }),
+  );
+
+  app.patch(
+    "/me/profile",
+    asyncHandler(async (request, response) => {
+      const user = requireAuth(request);
+      const payload = profileUpdateSchema.parse(request.body);
+      const updatedUser = await updateProfile(user.id, payload);
+      response.json({
+        user: updatedUser,
+        message: "프로필이 저장되었습니다.",
+      });
     }),
   );
 
@@ -1565,6 +1616,20 @@ export function createApp() {
       const user = requireSellerAccess(request);
       const item = await createEvent(user.id, request.body as CreateEventInput);
       response.status(201).json({ item });
+    }),
+  );
+
+  app.patch(
+    "/admin/events/:eventId",
+    asyncHandler(async (request, response) => {
+      const user = requireSellerAccess(request);
+      const eventId = getRequiredString(request.params.eventId, "eventId");
+      const item = await updateSellerEvent(
+        user.id,
+        eventId,
+        request.body as UpdateEventInput,
+      );
+      response.json({ item });
     }),
   );
 

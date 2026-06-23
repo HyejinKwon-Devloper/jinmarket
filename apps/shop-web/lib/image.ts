@@ -2,6 +2,7 @@ const cloudinaryHostSuffix = "res.cloudinary.com";
 const cloudinaryUploadMarker = "/image/upload/";
 
 type CloudinaryImageProps = {
+  fallbackSrc: string;
   sizes?: string;
   src: string;
   srcSet?: string;
@@ -103,6 +104,7 @@ function buildResponsiveImageProps({
 }): CloudinaryImageProps {
   if (!imageUrl) {
     return {
+      fallbackSrc,
       sizes,
       src: fallbackSrc,
     };
@@ -118,6 +120,7 @@ function buildResponsiveImageProps({
   }));
 
   return {
+    fallbackSrc,
     sizes,
     src: variants[variants.length - 1].url,
     srcSet: variants.map((variant) => `${variant.url} ${variant.width}w`).join(", "),
@@ -128,8 +131,8 @@ export function getProductCardImageProps(imageUrl?: string | null): CloudinaryIm
   return buildResponsiveImageProps({
     imageUrl,
     fallbackSrc: defaultProductCardImage,
-    responsiveWidths: [240, 360, 720],
-    sizes: "(min-width: 1100px) 360px, (min-width: 640px) 33vw, 50vw",
+    responsiveWidths: [240, 360, 540],
+    sizes: "(min-width: 1100px) 240px, (min-width: 640px) 33vw, 50vw",
     transform: {
       crop: "fill",
       format: "auto",
@@ -143,8 +146,8 @@ export function getEventCardImageProps(imageUrl?: string | null): CloudinaryImag
   return buildResponsiveImageProps({
     imageUrl,
     fallbackSrc: defaultEventCardImage,
-    responsiveWidths: [360, 720],
-    sizes: "(min-width: 1100px) 360px, (min-width: 700px) 50vw, 50vw",
+    responsiveWidths: [320, 640],
+    sizes: "(min-width: 1100px) 320px, (min-width: 700px) 50vw, 50vw",
     transform: {
       crop: "fill",
       format: "auto",
@@ -158,8 +161,8 @@ export function getProductDetailImageProps(imageUrl?: string | null): Cloudinary
   return buildResponsiveImageProps({
     imageUrl,
     fallbackSrc: defaultProductCardImage,
-    responsiveWidths: [720, 1080, 1440],
-    sizes: "(min-width: 960px) 55vw, 100vw",
+    responsiveWidths: [640, 960, 1280],
+    sizes: "(min-width: 960px) 52vw, 100vw",
     transform: {
       crop: "limit",
       format: "auto",

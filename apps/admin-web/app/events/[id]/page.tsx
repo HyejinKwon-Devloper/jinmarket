@@ -154,6 +154,9 @@ export default function AdminEventDetailPage() {
             <Link className="ghostButton" href="/events">
               이벤트 목록
             </Link>
+            <Link className="secondaryButton" href={`/events/${item.id}/edit`}>
+              이벤트 수정
+            </Link>
             {item.registrationMode === "SHOP_ENTRY" ? (
               canRunShopEntryDraw ? (
                 <Link className="primaryButton" href={drawHref(item)}>

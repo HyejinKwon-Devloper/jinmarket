@@ -15,14 +15,14 @@ export default async function MyProfilePage() {
           Profile
         </p>
         <h1 className="mt-3 text-[24px] font-extrabold tracking-[-0.04em] text-[var(--buyer-dark)] sm:text-[30px]">
-          프로필 사진 변경
+          프로필 관리
         </h1>
         <div className="mt-4 rounded-[20px] border border-[var(--buyer-border)] bg-[var(--buyer-softest)] px-4 py-3 text-sm leading-6 text-[var(--buyer-dark)]">
-          프로필 사진을 변경하려면 <Link href="/login" className="font-semibold underline underline-offset-4">로그인</Link>이 필요합니다.
+          프로필을 관리하려면 <Link href="/login" className="font-semibold underline underline-offset-4">로그인</Link>이 필요합니다.
         </div>
       </section>
     );
   }
 
-  return <ProfileImagePageClient initialUser={user} />;
+  return <ProfileImagePageClient initialUser={user ?? undefined} />;
 }

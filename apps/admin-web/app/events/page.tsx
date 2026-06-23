@@ -275,6 +275,9 @@ export default function AdminEventsPage() {
                   <Link className="secondaryButton" href={`/events/${item.id}`}>
                     상세 관리
                   </Link>
+                  <Link className="ghostButton" href={`/events/${item.id}/edit`}>
+                    이벤트 수정
+                  </Link>
                   <Link className="ghostButton" href={drawHref(item)}>
                     추첨 시작
                   </Link>

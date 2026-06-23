@@ -9,6 +9,7 @@ import type {
   SessionUser,
 } from "@jinmarket/shared";
 
+import { useBuyerSession } from "./BuyerSessionProvider";
 import { GamePurchaseModal } from "./GamePurchaseModal";
 import { ProductImageCarousel } from "./ProductImageCarousel";
 import {
@@ -91,6 +92,7 @@ export function ProductDetailClient({
   initialItem: ProductDetail;
   initialUser: SessionUser | null;
 }) {
+  const { hasError, isResolved, refreshUser, user } = useBuyerSession();
   const [item, setItem] = useState<ProductDetail>(initialItem);
   const [message, setMessage] = useState<string | null>(null);
   const [showGameModal, setShowGameModal] = useState(false);
@@ -118,7 +120,6 @@ export function ProductDetailClient({
     }
   }, []);
 
-  const user = initialUser;
   const isOpen = item.status === "OPEN";
   const now = Date.now();
   const saleStartsAt = new Date(item.saleStartsAt).getTime();
@@ -130,22 +131,29 @@ export function ProductDetailClient({
   const isWithinSalePeriod = !isSaleNotStarted && !isSaleEndedByPeriod;
   const isPurchaseCompleted = Boolean(item.soldOrder);
   const isActionLocked = !isOpen || !isWithinSalePeriod || isPurchaseCompleted;
-  const isSeller = user?.id === item.sellerId;
+  const effectiveUser =
+    isResolved && !hasError ? user : user ?? initialUser ?? null;
+  const hasSessionError = hasError && !effectiveUser;
+  const isSessionLoading = !effectiveUser && !isResolved && !hasError;
+  const isSeller = effectiveUser?.id === item.sellerId;
   const gameProgress = item.myGameProgress ?? null;
   const gameProgressMessage = buildGameProgressMessage(item);
   const canInstantBuy =
-    Boolean(user) &&
+    Boolean(effectiveUser) &&
     !isActionLocked &&
     item.purchaseType === "INSTANT_BUY" &&
     !isSeller;
   const canPlayGame =
-    Boolean(user) &&
+    Boolean(effectiveUser) &&
     !isActionLocked &&
     item.purchaseType === "GAME_CHANCE" &&
     !isSeller &&
     !(gameProgress?.isComplete ?? false);
   const canOfferPrice =
-    Boolean(user) && !isActionLocked && item.allowPriceOffer && !isSeller;
+    Boolean(effectiveUser) &&
+    !isActionLocked &&
+    item.allowPriceOffer &&
+    !isSeller;
   const saleLabel = item.isFreeShare ? "무료 나눔" : "구매";
   const contactMessage = item.isFreeShare
     ? "무료 나눔 신청이 완료되면 판매자가 전달 방법을 위해 직접 연락합니다."
@@ -214,9 +222,15 @@ export function ProductDetailClient({
           </div>
         </div>
 
-        {!user ? (
+        {!hasSessionError && isResolved && !effectiveUser ? (
           <div className="message">
             로그인하면 바로 신청하거나 가위바위보 도전을 진행할 수 있습니다.
+          </div>
+        ) : null}
+        {hasSessionError ? (
+          <div className="message">
+            로그인 상태를 확인하지 못했습니다. 다시 확인한 뒤 이어서 진행해
+            주세요.
           </div>
         ) : null}
 
@@ -245,7 +259,19 @@ export function ProductDetailClient({
               <button className="primaryButton" disabled type="button">
                 {lockedPurchaseLabel}
               </button>
-            ) : !user ? (
+            ) : isSessionLoading ? (
+              <button className="primaryButton" disabled type="button">
+                로그인 상태 확인 중...
+              </button>
+            ) : hasSessionError ? (
+              <button
+                className="primaryButton"
+                type="button"
+                onClick={() => void refreshUser()}
+              >
+                로그인 상태 다시 확인
+              </button>
+            ) : !effectiveUser ? (
               <Link className="primaryButton" href={loginHref}>
                 로그인 후 바로 {item.isFreeShare ? "신청" : "구매"}
               </Link>
@@ -298,7 +324,23 @@ export function ProductDetailClient({
                   {lockedGameLabel}
                 </button>
               </div>
-            ) : !user ? (
+            ) : isSessionLoading ? (
+              <div className="actionRow">
+                <button className="secondaryButton" disabled type="button">
+                  로그인 상태 확인 중...
+                </button>
+              </div>
+            ) : hasSessionError ? (
+              <div className="actionRow">
+                <button
+                  className="secondaryButton"
+                  type="button"
+                  onClick={() => void refreshUser()}
+                >
+                  로그인 상태 다시 확인
+                </button>
+              </div>
+            ) : !effectiveUser ? (
               <div className="actionRow">
                 <Link className="secondaryButton" href={loginHref}>
                   로그인 후 가위바위보 도전
@@ -330,7 +372,23 @@ export function ProductDetailClient({
                   가격 제안 마감
                 </button>
               </div>
-            ) : !user ? (
+            ) : isSessionLoading ? (
+              <div className="actionRow">
+                <button className="ghostButton" disabled type="button">
+                  로그인 상태 확인 중...
+                </button>
+              </div>
+            ) : hasSessionError ? (
+              <div className="actionRow">
+                <button
+                  className="ghostButton"
+                  type="button"
+                  onClick={() => void refreshUser()}
+                >
+                  로그인 상태 다시 확인
+                </button>
+              </div>
+            ) : !effectiveUser ? (
               <div className="actionRow">
                 <Link className="ghostButton" href={loginHref}>
                   로그인 후 가격 제안하기

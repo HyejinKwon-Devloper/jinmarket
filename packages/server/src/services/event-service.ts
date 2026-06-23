@@ -1,3 +1,4 @@
+import { v2 as cloudinary } from "cloudinary";
 import { z } from "zod";
 
 import { query, runWithSystemDbContext, withTransaction, type DbClient } from "@jinmarket/db";
@@ -9,11 +10,19 @@ import type {
   EventDrawSource,
   EventEntryRecord,
   EventImage,
+  UpdateEventInput,
 } from "../../../shared/src/index.js";
 
 import { AppError, isPgUniqueError } from "../errors.js";
+import { env } from "../env.js";
 import { safeUserLoginIdSql } from "./account-sql.js";
 import { loadUserIdentityMap } from "./user-identity-service.js";
+
+cloudinary.config({
+  cloud_name: env.CLOUDINARY_CLOUD_NAME,
+  api_key: env.CLOUDINARY_API_KEY,
+  api_secret: env.CLOUDINARY_API_SECRET,
+});
 
 const isoDateTimeSchema = z.string().datetime({ offset: true });
 
@@ -27,6 +36,11 @@ const eventImageSchema = z.object({
   isPrimary: z.boolean(),
 });
 
+const eventImagesSchema = z
+  .array(eventImageSchema)
+  .min(1)
+  .max(MAX_EVENT_IMAGES);
+
 const createEventSchema = z
   .object({
     title: z.string().trim().min(2).max(140),
@@ -34,10 +48,33 @@ const createEventSchema = z
     registrationMode: z.enum(["MANUAL", "SHOP_ENTRY"]),
     startsAt: isoDateTimeSchema,
     endsAt: isoDateTimeSchema,
-    images: z.array(eventImageSchema).min(1).max(MAX_EVENT_IMAGES),
+    images: eventImagesSchema,
   })
   .superRefine((value, context) => {
     if (new Date(value.endsAt).getTime() <= new Date(value.startsAt).getTime()) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "이벤트 종료 일시는 시작 일시보다 뒤여야 합니다.",
+        path: ["endsAt"],
+      });
+    }
+  });
+
+const updateEventSchema = z
+  .object({
+    title: z.string().trim().min(2).max(140).optional(),
+    description: z.string().trim().min(1).max(5000).optional(),
+    registrationMode: z.enum(["MANUAL", "SHOP_ENTRY"]).optional(),
+    startsAt: isoDateTimeSchema.optional(),
+    endsAt: isoDateTimeSchema.optional(),
+    images: eventImagesSchema.optional(),
+  })
+  .superRefine((value, context) => {
+    if (
+      value.startsAt &&
+      value.endsAt &&
+      new Date(value.endsAt).getTime() <= new Date(value.startsAt).getTime()
+    ) {
       context.addIssue({
         code: z.ZodIssueCode.custom,
         message: "이벤트 종료 일시는 시작 일시보다 뒤여야 합니다.",
@@ -142,6 +179,7 @@ async function hydrateEventCardRows(rows: EventCardQueryRow[], client?: DbClient
       seller_display_name: seller.displayName
     } satisfies EventCardRow;
   });
+
 }
 
 async function hydrateEventEntryRows(rows: EventEntryQueryRow[], client?: DbClient) {
@@ -217,7 +255,22 @@ function assertValidEventImages(images: EventImage[]) {
   }
 }
 
+function assertValidEventWindow(input: {
+  startsAt?: string | null;
+  endsAt?: string | null;
+}) {
+  if (!input.startsAt || !input.endsAt) {
+    return;
+  }
+
+  if (new Date(input.endsAt).getTime() <= new Date(input.startsAt).getTime()) {
+    throw new AppError("이벤트 종료 일시는 시작 일시보다 뒤여야 합니다.", 400);
+  }
+}
+
 async function replaceEventImages(client: DbClient, eventId: string, images: EventImage[]) {
+  await client.query("DELETE FROM event_images WHERE event_id = $1", [eventId]);
+
   for (const image of images) {
     await client.query(
       `
@@ -246,6 +299,54 @@ async function replaceEventImages(client: DbClient, eventId: string, images: Eve
       ],
     );
   }
+}
+
+async function destroyCloudinaryImages(publicIds: string[]) {
+  if (publicIds.length === 0) {
+    return;
+  }
+
+  await Promise.allSettled(
+    publicIds.map((publicId) =>
+      cloudinary.uploader.destroy(publicId, {
+        resource_type: "image",
+      }),
+    ),
+  );
+}
+
+function buildEventUpdateStatement(parsed: UpdateEventInput) {
+  const assignments: string[] = [];
+  const values: string[] = [];
+
+  if (parsed.title !== undefined) {
+    values.push(parsed.title);
+    assignments.push(`title = $${values.length + 2}`);
+  }
+
+  if (parsed.description !== undefined) {
+    values.push(parsed.description);
+    assignments.push(`description = $${values.length + 2}`);
+  }
+
+  if (parsed.registrationMode !== undefined) {
+    values.push(parsed.registrationMode);
+    assignments.push(
+      `registration_mode = $${values.length + 2}::event_registration_mode`,
+    );
+  }
+
+  if (parsed.startsAt !== undefined) {
+    values.push(parsed.startsAt);
+    assignments.push(`starts_at = $${values.length + 2}`);
+  }
+
+  if (parsed.endsAt !== undefined) {
+    values.push(parsed.endsAt);
+    assignments.push(`ends_at = $${values.length + 2}`);
+  }
+
+  return { assignments, values };
 }
 
 async function getEventImages(eventId: string) {
@@ -396,6 +497,91 @@ export async function createEvent(sellerId: string, input: CreateEventInput) {
     await replaceEventImages(client, insertedEventId, parsed.images);
     return insertedEventId;
   });
+
+  return getSellerEventDetail(sellerId, eventId);
+}
+
+export async function updateSellerEvent(
+  sellerId: string,
+  eventId: string,
+  input: UpdateEventInput,
+) {
+  const parsed = updateEventSchema.parse(input) as UpdateEventInput;
+  const nextImages = parsed.images;
+
+  if (nextImages) {
+    assertValidEventImages(nextImages);
+  }
+
+  const { assignments, values } = buildEventUpdateStatement(parsed);
+
+  if (assignments.length === 0 && !nextImages) {
+    throw new AppError("업데이트할 값이 없습니다.", 400);
+  }
+
+  let previousImagePublicIds: string[] = [];
+
+  await withTransaction(async (client) => {
+    const ownershipResult = await client.query<{
+      seller_id: string;
+      starts_at: Date;
+      ends_at: Date;
+    }>(
+      `
+        SELECT seller_id, starts_at, ends_at
+        FROM events
+        WHERE id = $1
+        FOR UPDATE
+      `,
+      [eventId],
+    );
+
+    const ownerRow = ownershipResult.rows[0];
+
+    if (!ownerRow) {
+      throw new AppError("이벤트를 찾을 수 없습니다.", 404);
+    }
+
+    if (ownerRow.seller_id !== sellerId) {
+      throw new AppError("해당 이벤트를 수정할 권한이 없습니다.", 403);
+    }
+
+    assertValidEventWindow({
+      startsAt: parsed.startsAt ?? ownerRow.starts_at.toISOString(),
+      endsAt: parsed.endsAt ?? ownerRow.ends_at.toISOString(),
+    });
+
+    if (assignments.length > 0) {
+      await client.query(
+        `
+          UPDATE events
+          SET ${assignments.join(", ")}, updated_at = NOW()
+          WHERE id = $1 AND seller_id = $2
+        `,
+        [eventId, sellerId, ...values],
+      );
+    }
+
+    if (nextImages) {
+      const imageResult = await client.query<{ provider_public_id: string }>(
+        `
+          SELECT provider_public_id
+          FROM event_images
+          WHERE event_id = $1
+        `,
+        [eventId],
+      );
+
+      previousImagePublicIds = imageResult.rows.map(
+        (row) => row.provider_public_id,
+      );
+      await replaceEventImages(client, eventId, nextImages);
+    }
+  });
+
+  if (previousImagePublicIds.length > 0) {
+    await destroyCloudinaryImages(previousImagePublicIds);
+  }
 
   return getSellerEventDetail(sellerId, eventId);
 }

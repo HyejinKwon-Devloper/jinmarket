@@ -9,6 +9,7 @@ import {
   fetchCurrentUser,
   hasSellerAccess,
   isApprovalAdmin,
+  subscribeAdminProfileUpdated,
   requestJson,
 } from "../lib/api";
 import { PwaInstallPromptUnified } from "./PwaInstallPromptUnified";
@@ -76,6 +77,11 @@ const navigationItems: NavigationItem[] = [
     description: "관리자 인증 후 대상 사용자와 앱을 골라 운영 푸시를 보냅니다.",
     adminOnly: true,
   },
+  {
+    href: "/profile",
+    label: "내 프로필",
+    description: "이름, 프로필 사진, 비밀번호를 관리합니다.",
+  },
 ];
 
 function resolveCurrentItem(pathname: string) {
@@ -142,6 +148,7 @@ export function AdminChrome({ children }: { children: React.ReactNode }) {
     () => sanitizeProfileImageUrl(user?.profileImageUrl),
     [user?.profileImageUrl],
   );
+  const profileHref = user ? "/profile" : "/login";
 
   const visibleNavigationItems = useMemo(
     () =>
@@ -152,9 +159,30 @@ export function AdminChrome({ children }: { children: React.ReactNode }) {
   );
 
   useEffect(() => {
+    let isMounted = true;
+
     void fetchCurrentUser()
-      .then(setUser)
-      .catch(() => setUser(null));
+      .then((nextUser) => {
+        if (isMounted) {
+          setUser(nextUser);
+        }
+      })
+      .catch(() => {
+        if (isMounted) {
+          setUser(null);
+        }
+      });
+
+    const unsubscribe = subscribeAdminProfileUpdated((nextUser) => {
+      if (isMounted) {
+        setUser(nextUser);
+      }
+    });
+
+    return () => {
+      isMounted = false;
+      unsubscribe();
+    };
   }, []);
 
   useEffect(() => {
@@ -329,7 +357,12 @@ export function AdminChrome({ children }: { children: React.ReactNode }) {
                 </button>
               </div>
 
-              <div className="adminProfileCard">
+              <Link
+                aria-label={user ? "프로필 관리 열기" : "로그인 페이지 열기"}
+                className="adminProfileCard adminProfileCardLink"
+                href={profileHref}
+                onClick={() => setNavOpen(false)}
+              >
                 <span aria-hidden="true" className="adminAvatar">
                   {safeProfileImageUrl && !profileImageFailed ? (
                     <img
@@ -353,7 +386,7 @@ export function AdminChrome({ children }: { children: React.ReactNode }) {
                   </p>
                   <p className="adminProfileStatus">{getUserStatus(user)}</p>
                 </div>
-              </div>
+              </Link>
 
               <button
                 aria-label="메뉴 닫기"

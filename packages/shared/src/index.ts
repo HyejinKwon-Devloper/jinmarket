@@ -66,6 +66,7 @@ export interface SessionUser {
   id: string;
   displayName: string;
   email: string | null;
+  hasLocalPassword: boolean;
   profileImageUrl: string | null;
   sellerEmailVerifiedAt: string | null;
   threadsUsername: string | null;
@@ -138,6 +139,7 @@ export interface ProductCard {
   catalogGroupKey: string;
   catalogGroupLabel: string;
   sellerDisplayName: string | null;
+  sellerProfileImageUrl: string | null;
   primaryImageUrl: string | null;
   saleStartsAt: string;
   saleEndsAt: string | null;
@@ -307,6 +309,15 @@ export interface CreateEventInput {
   startsAt: string;
   endsAt: string;
   images: EventImage[];
+}
+
+export interface UpdateEventInput {
+  title?: string;
+  description?: string;
+  registrationMode?: EventRegistrationMode;
+  startsAt?: string;
+  endsAt?: string;
+  images?: EventImage[];
 }
 
 export interface UpdateProductInput {

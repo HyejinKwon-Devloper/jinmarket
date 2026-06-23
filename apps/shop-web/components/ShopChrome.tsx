@@ -5,12 +5,10 @@ import { usePathname } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { SessionUser } from "@jinmarket/shared";
 
-import {
-  fetchCurrentUser,
-  requestJson,
-  subscribeBuyerProfileUpdated,
-} from "../lib/api";
+import { requestJson } from "../lib/api";
+import { unsubscribeLocalPush } from "../lib/push";
 import { cn } from "../lib/ui";
+import { useBuyerSession } from "./BuyerSessionProvider";
 import { ProfileAvatar } from "./ProfileAvatar";
 import { PwaInstallPrompt } from "./PwaInstallPrompt";
 import { PushNotificationPrompt } from "./PushNotificationPrompt";
@@ -87,7 +85,7 @@ function getProfileHref(user: SessionUser | null) {
 
 function getProfileSubtext(user: SessionUser | null) {
   if (!user) {
-    return "로그인하고 주문 내역과 프로필 사진을 함께 관리해 보세요.";
+    return "로그인하고 주문 내역과 프로필을 함께 관리해 보세요.";
   }
 
   return user.email ?? user.threadsUsername ?? "구매자 계정";
@@ -95,37 +93,19 @@ function getProfileSubtext(user: SessionUser | null) {
 
 export function ShopChrome({ children }: { children: React.ReactNode }) {
   const pathname = usePathname() ?? "/";
-  const [user, setUser] = useState<SessionUser | null>(null);
+  const { hasError, refreshUser, setUser, user } = useBuyerSession();
   const [navOpen, setNavOpen] = useState(false);
   const menuButtonRef = useRef<HTMLButtonElement | null>(null);
   const closeButtonRef = useRef<HTMLButtonElement | null>(null);
   const activeNavItem = useMemo(() => getCurrentNavItem(pathname), [pathname]);
-  const profileHref = getProfileHref(user);
-
-  useEffect(() => {
-    let isMounted = true;
-
-    void fetchCurrentUser()
-      .then((nextUser) => {
-        if (isMounted) {
-          setUser(nextUser);
-        }
-      })
-      .catch(() => {
-        if (isMounted) {
-          setUser(null);
-        }
-      });
-
-    const unsubscribe = subscribeBuyerProfileUpdated((nextUser) => {
-      setUser(nextUser);
-    });
-
-    return () => {
-      isMounted = false;
-      unsubscribe();
-    };
-  }, []);
+  const hasSessionError = hasError && !user;
+  const profileHref = hasSessionError ? pathname : getProfileHref(user);
+  const profileDisplayName = hasSessionError
+    ? "상태 확인 필요"
+    : user?.displayName ?? "게스트";
+  const profileSubtext = hasSessionError
+    ? "로그인 상태를 확인하지 못했습니다. 다시 확인해 주세요."
+    : getProfileSubtext(user);
 
   useEffect(() => {
     setNavOpen(false);
@@ -156,6 +136,9 @@ export function ShopChrome({ children }: { children: React.ReactNode }) {
   }, [navOpen]);
 
   async function handleLogout() {
+    // 세션이 유효할 때 이 기기의 푸시 구독을 먼저 정리한다(서버 행 삭제 + 브라우저 해제).
+    // 정리 실패가 로그아웃 자체를 막아서는 안 되므로 무시한다.
+    await unsubscribeLocalPush().catch(() => undefined);
     await requestJson("/auth/logout", { method: "POST" });
     setUser(null);
     setNavOpen(false);
@@ -250,7 +233,7 @@ export function ShopChrome({ children }: { children: React.ReactNode }) {
                   <Link
                     aria-label={
                       user
-                        ? "프로필 사진 변경 페이지 열기"
+                        ? "프로필 관리 페이지 열기"
                         : "로그인 페이지 열기"
                     }
                     className="w-fit rounded-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--buyer-accent)] focus-visible:ring-offset-4"
@@ -258,7 +241,7 @@ export function ShopChrome({ children }: { children: React.ReactNode }) {
                   >
                     <ProfileAvatar
                       className="shadow-[0_18px_36px_rgba(31,78,121,0.12)]"
-                      displayName={user?.displayName ?? "게스트"}
+                      displayName={profileDisplayName}
                       imageUrl={user?.profileImageUrl}
                       size="lg"
                     />
@@ -269,18 +252,32 @@ export function ShopChrome({ children }: { children: React.ReactNode }) {
                       Profile
                     </p>
                     <p className="truncate text-[22px] font-bold tracking-[-0.03em] text-[var(--buyer-dark)]">
-                      {user?.displayName ?? "게스트"}
+                      {profileDisplayName}
                     </p>
                     <p className="text-sm leading-6 text-[var(--buyer-muted)]">
-                      {getProfileSubtext(user)}
+                      {profileSubtext}
                     </p>
                   </div>
                 </div>
 
                 <div className="mt-4 flex flex-wrap gap-3">
-                  <LinkButton href={profileHref} variant="outline">
-                    {user ? "프로필 사진 변경" : "로그인하고 프로필 등록"}
-                  </LinkButton>
+                  {user ? (
+                    <LinkButton href={profileHref} variant="outline">
+                      프로필 관리
+                    </LinkButton>
+                  ) : hasSessionError ? (
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={() => void refreshUser()}
+                    >
+                      상태 다시 확인
+                    </Button>
+                  ) : (
+                    <LinkButton href={profileHref} variant="outline">
+                      로그인하고 프로필 등록
+                    </LinkButton>
+                  )}
                 </div>
               </section>
 
@@ -357,6 +354,15 @@ export function ShopChrome({ children }: { children: React.ReactNode }) {
                       onClick={() => void handleLogout()}
                     >
                       로그아웃
+                    </Button>
+                  ) : hasSessionError ? (
+                    <Button
+                      className="min-h-11 px-4"
+                      type="button"
+                      variant="subtle"
+                      onClick={() => void refreshUser()}
+                    >
+                      상태 다시 확인
                     </Button>
                   ) : (
                     <LinkButton
