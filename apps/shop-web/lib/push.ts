@@ -1,5 +1,9 @@
 import { requestJson } from "./api";
 
+function buildPushSubscriptionDeletePath(endpoint: string) {
+  return `/me/push-subscriptions?endpoint=${encodeURIComponent(endpoint)}`;
+}
+
 /**
  * 현재 브라우저(서비스워커)에 남아있는 웹 푸시 구독을 해제한다.
  *
@@ -31,9 +35,8 @@ export async function unsubscribeLocalPush() {
     return;
   }
 
-  await requestJson("/me/push-subscriptions", {
+  await requestJson(buildPushSubscriptionDeletePath(subscription.endpoint), {
     method: "DELETE",
-    body: JSON.stringify({ endpoint: subscription.endpoint }),
   });
   await subscription.unsubscribe();
 }

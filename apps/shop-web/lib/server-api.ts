@@ -80,11 +80,18 @@ export async function readProducts() {
 }
 
 export async function readProductDetail(productId: string) {
-  const payload = await requestServerJson<{ item: ProductDetail }>(`/products/${productId}`, {
-    includeCookies: true,
-  });
+  const payload = await readProductDetailPageData(productId);
 
   return payload.item;
+}
+
+export async function readProductDetailPageData(productId: string) {
+  return requestServerJson<{ item: ProductDetail; viewer: SessionUser | null }>(
+    `/products/${productId}`,
+    {
+      includeCookies: true,
+    },
+  );
 }
 
 export async function readEvents() {

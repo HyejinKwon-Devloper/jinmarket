@@ -1,6 +1,12 @@
 "use client";
 
 import { useRouter } from "next/navigation";
+import {
+  useEffect,
+  useState,
+  type KeyboardEvent,
+  type MouseEvent,
+} from "react";
 import type { ProductCard } from "@jinmarket/shared";
 
 import { formatPrice, purchaseTypeLabel, statusLabel } from "../lib/api";
@@ -18,12 +24,15 @@ export function BuyerProductCard({
 }) {
   const router = useRouter();
   const image = getProductCardImageProps(item.primaryImageUrl);
+  const productHref = `/products/${item.id}`;
+  const [isNavigating, setIsNavigating] = useState(false);
+
   const handleImageError = (
     event: React.SyntheticEvent<HTMLImageElement>,
   ) => {
     const target = event.currentTarget;
 
-    // 깨진/만료된 이미지 URL이면 플레이스홀더로 대체한다. 이미 폴백이면 무한 루프를 막는다.
+    // Prevent an infinite loop if the fallback image also fails.
     if (target.src === image.fallbackSrc) {
       return;
     }
@@ -31,17 +40,91 @@ export function BuyerProductCard({
     target.srcset = "";
     target.src = image.fallbackSrc;
   };
+
   const sellerLabel = item.isAnonymous
     ? "익명 셀렉션"
     : `${item.sellerDisplayName ?? item.catalogGroupLabel}`;
 
+  useEffect(() => {
+    if (!priority) {
+      return;
+    }
+
+    void router.prefetch(productHref);
+  }, [priority, productHref, router]);
+
+  function handlePrefetch() {
+    void router.prefetch(productHref);
+  }
+
+  function startNavigation() {
+    if (isNavigating) {
+      return;
+    }
+
+    setIsNavigating(true);
+    window.requestAnimationFrame(() => {
+      router.push(productHref);
+    });
+  }
+
+  function handleCardClick(event: MouseEvent<HTMLElement>) {
+    if (
+      event.defaultPrevented ||
+      event.button !== 0 ||
+      event.metaKey ||
+      event.ctrlKey ||
+      event.shiftKey ||
+      event.altKey
+    ) {
+      return;
+    }
+
+    startNavigation();
+  }
+
+  function handleCardKeyDown(event: KeyboardEvent<HTMLElement>) {
+    if (event.defaultPrevented) {
+      return;
+    }
+
+    if (event.key !== "Enter" && event.key !== " ") {
+      return;
+    }
+
+    event.preventDefault();
+    startNavigation();
+  }
+
+  const navigatingOverlay = isNavigating ? (
+    <div
+      aria-hidden="true"
+      className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center rounded-[inherit] bg-white/82 backdrop-blur-[1px]"
+    >
+      <div className="inline-flex items-center gap-2 rounded-full bg-[var(--buyer-dark)] px-3 py-2 text-xs font-semibold text-white shadow-[0_12px_28px_rgba(15,23,42,0.24)]">
+        <span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-white/25 border-t-white" />
+        상품 여는 중...
+      </div>
+    </div>
+  ) : null;
+
   if (variant === "catalog") {
     return (
-      <article className="group flex h-full flex-col rounded-[24px] border border-[var(--buyer-border)] bg-white p-2.5 shadow-[0_14px_32px_rgba(15,23,42,0.06)] transition hover:-translate-y-0.5 hover:shadow-[0_20px_44px_rgba(31,78,121,0.12)] sm:rounded-[28px] sm:p-3">
-        <div
-          className="rounded-[20px] bg-[var(--buyer-softest)] p-2 sm:rounded-[24px] sm:p-2.5"
-          onClick={() => router.push(`/products/${item.id}`)}
-        >
+      <article
+        aria-busy={isNavigating}
+        aria-label={`${item.title} 상세 보기`}
+        className="group relative flex h-full cursor-pointer flex-col rounded-[24px] border border-[var(--buyer-border)] bg-white p-2.5 shadow-[0_14px_32px_rgba(15,23,42,0.06)] transition hover:-translate-y-0.5 hover:shadow-[0_20px_44px_rgba(31,78,121,0.12)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--buyer-accent)] focus-visible:ring-offset-2 sm:rounded-[28px] sm:p-3"
+        role="link"
+        tabIndex={0}
+        onClick={handleCardClick}
+        onFocus={handlePrefetch}
+        onKeyDown={handleCardKeyDown}
+        onMouseEnter={handlePrefetch}
+        onTouchStart={handlePrefetch}
+      >
+        {navigatingOverlay}
+
+        <div className="rounded-[20px] bg-[var(--buyer-softest)] p-2 sm:rounded-[24px] sm:p-2.5">
           <div className="relative overflow-hidden rounded-[18px] bg-[var(--buyer-soft)] sm:rounded-[22px]">
             <img
               alt={item.title}
@@ -104,11 +187,21 @@ export function BuyerProductCard({
   }
 
   return (
-    <article className="flex h-full flex-col overflow-hidden rounded-[18px] border border-[var(--buyer-border)] bg-white shadow-[0_12px_24px_rgba(15,23,42,0.06)] transition hover:-translate-y-0.5 hover:shadow-[0_20px_40px_rgba(31,78,121,0.12)] sm:rounded-[22px]">
-      <div
-        className="relative overflow-hidden bg-[var(--buyer-soft)]"
-        onClick={() => router.push(`/products/${item.id}`)}
-      >
+    <article
+      aria-busy={isNavigating}
+      aria-label={`${item.title} 상세 보기`}
+      className="group relative flex h-full cursor-pointer flex-col overflow-hidden rounded-[18px] border border-[var(--buyer-border)] bg-white shadow-[0_12px_24px_rgba(15,23,42,0.06)] transition hover:-translate-y-0.5 hover:shadow-[0_20px_40px_rgba(31,78,121,0.12)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--buyer-accent)] focus-visible:ring-offset-2 sm:rounded-[22px]"
+      role="link"
+      tabIndex={0}
+      onClick={handleCardClick}
+      onFocus={handlePrefetch}
+      onKeyDown={handleCardKeyDown}
+      onMouseEnter={handlePrefetch}
+      onTouchStart={handlePrefetch}
+    >
+      {navigatingOverlay}
+
+      <div className="relative overflow-hidden bg-[var(--buyer-soft)]">
         <img
           alt={item.title}
           className="aspect-square w-full object-cover"

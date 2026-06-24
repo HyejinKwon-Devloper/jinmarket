@@ -196,10 +196,12 @@ export function PushNotificationPrompt({
       const subscription = await registration.pushManager.getSubscription();
 
       if (subscription) {
-        await requestJson("/me/push-subscriptions", {
-          method: "DELETE",
-          body: JSON.stringify({ endpoint: subscription.endpoint }),
-        });
+        await requestJson(
+          `/me/push-subscriptions?endpoint=${encodeURIComponent(subscription.endpoint)}`,
+          {
+            method: "DELETE",
+          },
+        );
         await subscription.unsubscribe();
       }
 

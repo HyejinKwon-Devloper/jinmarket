@@ -409,6 +409,24 @@ function getOptionalString(value: unknown) {
   return undefined;
 }
 
+function getPushSubscriptionDeleteInput(request: Request) {
+  const bodyResult = pushSubscriptionDeleteSchema.safeParse(request.body);
+
+  if (bodyResult.success) {
+    return bodyResult.data;
+  }
+
+  const queryResult = pushSubscriptionDeleteSchema.safeParse({
+    endpoint: getOptionalString(request.query.endpoint),
+  });
+
+  if (queryResult.success) {
+    return queryResult.data;
+  }
+
+  throw bodyResult.error;
+}
+
 function isUnsafeMethod(method: string) {
   return !["GET", "HEAD", "OPTIONS"].includes(method.toUpperCase());
 }
@@ -1198,7 +1216,7 @@ export function createApp() {
     "/me/push-subscriptions",
     asyncHandler(async (request, response) => {
       const user = requireAuth(request);
-      const parsed = pushSubscriptionDeleteSchema.parse(request.body);
+      const parsed = getPushSubscriptionDeleteInput(request);
       await removeWebPushSubscription(user.id, parsed.endpoint);
       response.json({
         ok: true,
@@ -1521,6 +1539,7 @@ export function createApp() {
       );
       response.json({
         item: await getProductDetail(productId, request.sessionUser?.id),
+        viewer: request.sessionUser ?? null,
       });
     }),
   );

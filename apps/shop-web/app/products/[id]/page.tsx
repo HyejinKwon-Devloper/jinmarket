@@ -4,8 +4,7 @@ import { notFound } from "next/navigation";
 
 import { ProductDetailClient } from "../../../components/ProductDetailClient";
 import {
-  readCurrentUser,
-  readProductDetail,
+  readProductDetailPageData,
   ServerApiError,
 } from "../../../lib/server-api";
 
@@ -17,10 +16,8 @@ export default async function ProductDetailPage({
   const { id } = await params;
 
   try {
-    const [initialUser, initialItem] = await Promise.all([
-      readCurrentUser(),
-      readProductDetail(id),
-    ]);
+    const { item: initialItem, viewer: initialUser } =
+      await readProductDetailPageData(id);
 
     return (
       <ProductDetailClient
